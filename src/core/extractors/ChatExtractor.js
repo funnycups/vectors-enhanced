@@ -34,7 +34,9 @@ export class ChatExtractor {
             
             source.forEach(item => {
                 let extractedText;
-                if (item.metadata?.index === 0 || item.metadata?.is_user === true) {
+                const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                
+                if ((item.metadata?.index === 0 && !applyTagsToFirstMessage) || item.metadata?.is_user === true) {
                     extractedText = item.text;
                 } else {
                     extractedText = extractTagContent(item.text, rules, settings.content_blacklist || []);
@@ -65,7 +67,9 @@ export class ChatExtractor {
 
             messages.forEach(msg => {
                 let extractedText;
-                if (msg.index === 0 || msg.is_user === true) {
+                const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+                
+                if ((msg.index === 0 && !applyTagsToFirstMessage) || msg.is_user === true) {
                     extractedText = msg.text;
                 } else {
                     extractedText = extractTagContent(msg.text, rules);

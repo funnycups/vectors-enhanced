@@ -442,6 +442,17 @@ export class SettingsManager {
         this.settings.selected_content.chat.include_hidden = $('#vectors_enhanced_chat_include_hidden').prop('checked');
         this.updateAndSave();
       });
+
+    // 对第0层应用标签提取规则
+    $('#vectors_enhanced_apply_tags_to_first_message')
+      .prop('checked', this.settings.selected_content.chat.apply_tags_to_first_message || false)
+      .on('input', () => {
+        if (!this.settings.selected_content.chat) {
+          this.settings.selected_content.chat = {};
+        }
+        this.settings.selected_content.chat.apply_tags_to_first_message = $('#vectors_enhanced_apply_tags_to_first_message').prop('checked');
+        this.updateAndSave();
+      });
   }
 
   /**
