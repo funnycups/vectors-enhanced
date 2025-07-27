@@ -318,6 +318,12 @@ export class MemoryUI {
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
             
+            // 检查主开关是否启用
+            if (!settings.master_enabled) {
+                this.toastr?.warning('聊天记录超级管理器已禁用，请先启用主开关');
+                return;
+            }
+            
             // 检查聊天内容是否启用
             if (!settings.selected_content.chat.enabled) {
                 this.toastr?.warning('请先在内容选择中启用聊天记录');
@@ -919,6 +925,11 @@ export class MemoryUI {
      */
     async vectorizeChatLore() {
         try {
+            // 检查主开关是否启用
+            if (!this.settings?.master_enabled) {
+                this.toastr?.warning('聊天记录超级管理器已禁用，请先启用主开关');
+                return;
+            }
             // 尝试多种方式获取chat world
             let chatWorld = chat_metadata?.[METADATA_KEY];
             
@@ -1225,6 +1236,12 @@ export class MemoryUI {
      */
     async checkAutoSummarize() {
         try {
+            // 检查主开关是否启用
+            if (!this.settings?.master_enabled) {
+                console.log('[MemoryUI] 主开关已禁用，跳过自动总结检查');
+                return;
+            }
+            
             // 检查是否已有自动总结在进行中
             if (this.isAutoSummarizing) {
                 console.log('[MemoryUI] 自动总结已在进行中，跳过本次触发');
@@ -1316,7 +1333,6 @@ export class MemoryUI {
     async performAutoSummarize(currentFloor, keepCount) {
         try {
             console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, keepCount });
-            this.toastr?.info('开始自动总结...');
             
             // 导入必要的函数和工具
             const { extension_settings, getContext } = await import('../../../../../../extensions.js');
@@ -1325,6 +1341,14 @@ export class MemoryUI {
             
             const settings = extension_settings.vectors_enhanced;
             const context = getContext();
+            
+            // 检查主开关是否启用
+            if (!settings.master_enabled) {
+                console.log('[MemoryUI] 主开关已禁用，跳过自动总结');
+                return;
+            }
+            
+            this.toastr?.info('开始自动总结...');
             
             // 获取标签提取规则（如果有的话）
             const rules = settings.tag_extraction_rules || [];
