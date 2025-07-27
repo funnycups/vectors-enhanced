@@ -208,20 +208,42 @@ async function previewTaskContent(task) {
 
   // Collect chat items
   if (task.actualProcessedItems.chat && task.actualProcessedItems.chat.length > 0) {
+    // Import tag extractor for filtering
+    const { extractTagContent } = await import('../../utils/tagExtractor.js');
+    
+    // Get tag rules from task settings (saved when task was created)
+    const chatSettings = task.settings?.chat || {};
+    const rules = chatSettings.tag_rules || [];
+    const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+    const contentBlacklist = task.settings?.content_blacklist || [];
+    
     const chatIndices = task.actualProcessedItems.chat;
     chatIndices.forEach(index => {
       if (context.chat[index]) {
         const msg = context.chat[index];
-        items.push({
-          type: 'chat',
-          text: msg.mes,
-          rawText: msg.mes, // Raw text is same as mes for task preview
-          metadata: {
-            index: index,
-            is_user: msg.is_user,
-            name: msg.name
-          }
-        });
+        let processedText;
+        
+        // Apply tag filtering based on the rules saved with the task
+        if ((index === 0 && !applyTagsToFirstMessage) || msg.is_user === true) {
+          // First message (if not applying tags) or user messages: use full text
+          processedText = msg.mes;
+        } else {
+          // Other messages: apply tag extraction rules
+          processedText = extractTagContent(msg.mes, rules, contentBlacklist);
+        }
+        
+        // Only include messages that have content after filtering
+        if (processedText && processedText.trim() !== '') {
+          items.push({
+            type: 'chat',
+            text: processedText,
+            metadata: {
+              index: index,
+              is_user: msg.is_user,
+              name: msg.name
+            }
+          });
+        }
       }
     });
   }
@@ -401,28 +423,12 @@ async function previewTaskContent(task) {
     const segments = identifyContinuousSegments(chatIndices);
     html += `<div style="margin: -1rem -1rem 1rem -1rem; padding: 0.75rem 1rem; background: transparent; border-bottom: 1px solid var(--SmartThemeBorderColor);"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
 
-    // Check if raw content preview is enabled
-    const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
-
     grouped.chat.forEach(item => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
       html += `<div class="preview-chat-message">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-
-      if (showRawContent && item.rawText) {
-        // Show raw text
-        const escapedRawText = item.rawText
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-        html += `<pre class="preview-chat-content" style="white-space: pre-wrap; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; font-size: 12px;">${escapedRawText}</pre>`;
-      } else {
-        // Show processed text
-        html += `<div class="preview-chat-content">${item.text}</div>`;
-      }
-
+      // Show processed text (after tag filtering)
+      html += `<div class="preview-chat-content">${item.text}</div>`;
       html += `</div>`;
     });
   } else {

@@ -513,9 +513,9 @@ export class ContentSelectionSettings {
         
         switch(type) {
             case 'chat':
-                // Reset chat settings to defaults but keep range
-                this.settings.selected_content.chat.types = { user: true, assistant: true };
-                this.settings.selected_content.chat.include_hidden = false;
+                // 对于聊天记录，不清除内部选择状态
+                // 保留所有设置（range, types, include_hidden）
+                console.log(`ContentSelectionSettings: Preserving chat internal selections`);
                 break;
                 
             case 'files':
