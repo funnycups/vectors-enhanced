@@ -193,7 +193,26 @@ const settings = {
         description: '强调是新添加的记录'
       }
     ],
-    custom: []
+    custom: [
+      {
+        id: 'custom1',
+        name: '自定义模板1',
+        template: '',
+        description: '用户自定义模板'
+      },
+      {
+        id: 'custom2',
+        name: '自定义模板2',
+        template: '',
+        description: '用户自定义模板'
+      },
+      {
+        id: 'custom3',
+        name: '自定义模板3',
+        template: '',
+        description: '用户自定义模板'
+      }
+    ]
   },
   active_preset_id: null,
 
@@ -3104,6 +3123,48 @@ jQuery(async () => {
   }
   if (settings.rerank_deduplication_instruction === undefined) {
     settings.rerank_deduplication_instruction = 'Execute the following operations:\n1. Sort documents by relevance in descending order\n2. Consider documents as duplicates if they meet ANY of these conditions:\n   - Core content overlap exceeds 60% (reduced from 80% for better precision)\n   - Contains identical continuous passages of 5+ words\n   - Shares the same examples, data points, or evidence\n3. When evaluating duplication, consider metadata differences:\n   - Different originalIndex values indicate temporal separation\n   - Different chunk numbers (chunk=X/Y) from the same entry should be preserved\n   - Different floor numbers represent different chronological positions\n   - Different world info entries or chapter markers indicate distinct contexts\n4. For identified duplicates, keep only the most relevant one, demote others to bottom 30% positions (reduced from 50% for gentler deduplication)';
+  }
+
+  // 迁移模板预设数据结构
+  if (settings.template_presets) {
+    // 确保有3个默认的自定义模板
+    if (!settings.template_presets.custom || settings.template_presets.custom.length === 0) {
+      settings.template_presets.custom = [
+        {
+          id: 'custom1',
+          name: '自定义模板1',
+          template: '',
+          description: '用户自定义模板'
+        },
+        {
+          id: 'custom2',
+          name: '自定义模板2',
+          template: '',
+          description: '用户自定义模板'
+        },
+        {
+          id: 'custom3',
+          name: '自定义模板3',
+          template: '',
+          description: '用户自定义模板'
+        }
+      ];
+    } else if (settings.template_presets.custom.length > 0) {
+      // 如果用户有旧的自定义预设，保留前3个并确保ID正确
+      const existingCustom = settings.template_presets.custom.slice(0, 3);
+      const newCustom = [
+        existingCustom[0] || { id: 'custom1', name: '自定义模板1', template: '', description: '用户自定义模板' },
+        existingCustom[1] || { id: 'custom2', name: '自定义模板2', template: '', description: '用户自定义模板' },
+        existingCustom[2] || { id: 'custom3', name: '自定义模板3', template: '', description: '用户自定义模板' }
+      ];
+      
+      // 确保ID正确
+      newCustom[0].id = 'custom1';
+      newCustom[1].id = 'custom2';
+      newCustom[2].id = 'custom3';
+      
+      settings.template_presets.custom = newCustom;
+    }
   }
 
    // 确保所有必需的结构都存在

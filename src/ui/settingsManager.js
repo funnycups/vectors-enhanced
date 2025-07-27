@@ -582,7 +582,26 @@ export class SettingsManager {
             description: '强调是新添加的记录'
           }
         ],
-        custom: []
+        custom: [
+          {
+            id: 'custom1',
+            name: '自定义模板1',
+            template: '',
+            description: '用户自定义模板'
+          },
+          {
+            id: 'custom2',
+            name: '自定义模板2',
+            template: '',
+            description: '用户自定义模板'
+          },
+          {
+            id: 'custom3',
+            name: '自定义模板3',
+            template: '',
+            description: '用户自定义模板'
+          }
+        ]
       };
       this.updateAndSave();
     }
@@ -593,7 +612,7 @@ export class SettingsManager {
     // 设置当前选中的预设
     if (this.settings.active_preset_id) {
       $('#vectors_enhanced_template_preset').val(this.settings.active_preset_id);
-      this.updateDeleteButtonVisibility();
+      this.updateRenameButtonVisibility();
     }
 
     // 预设选择变化事件
@@ -601,18 +620,26 @@ export class SettingsManager {
       const selectedId = $('#vectors_enhanced_template_preset').val();
       if (selectedId) {
         this.applyPreset(selectedId);
+      } else {
+        // 选择自定义模板时，清空文本框
+        $('#vectors_enhanced_template').val('');
+        this.settings.template = '';
+        this.settings.active_preset_id = null;
+        this.updateAndSave();
       }
-      this.updateDeleteButtonVisibility();
+      this.updateRenameButtonVisibility();
     });
 
-    // 保存预设按钮事件
-    $('#vectors_enhanced_save_preset').on('click', async () => {
-      await this.saveCustomPreset();
-    });
-
-    // 删除预设按钮事件
-    $('#vectors_enhanced_delete_preset').on('click', async () => {
-      await this.deleteCustomPreset();
+    // 重命名预设按钮事件
+    $('#vectors_enhanced_rename_preset').on('click', async () => {
+      try {
+        await this.renameCustomPreset();
+      } catch (error) {
+        console.error('Error renaming preset:', error);
+        if (typeof toastr !== 'undefined') {
+          toastr.error('重命名失败: ' + error.message);
+        }
+      }
     });
   }
 
@@ -633,88 +660,27 @@ export class SettingsManager {
       this.settings.template = preset.template;
       this.settings.active_preset_id = presetId;
       this.updateAndSave();
-    }
-  }
-
-  /**
-   * 保存自定义预设
-   */
-  async saveCustomPreset() {
-    const { callGenericPopup, POPUP_TYPE } = await import('../../../popup.js');
-    
-    // 获取当前模板内容
-    const currentTemplate = $('#vectors_enhanced_template').val().trim();
-    if (!currentTemplate) {
-      if (typeof toastr !== 'undefined') {
-        toastr.warning('请先输入模板内容');
-      }
-      return;
-    }
-
-    // 弹出对话框获取预设信息
-    const html = `
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <div>
-          <label>预设名称：</label>
-          <input type="text" id="preset_name" class="text_pole" placeholder="例如：战斗场景" style="width: 100%;">
-        </div>
-        <div>
-          <label>预设描述：</label>
-          <input type="text" id="preset_description" class="text_pole" placeholder="例如：用于描述战斗场景" style="width: 100%;">
-        </div>
-      </div>
-    `;
-
-    const result = await callGenericPopup(html, POPUP_TYPE.INPUT, '保存模板预设', { 
-      okButton: '保存',
-      cancelButton: '取消'
-    });
-
-    if (result) {
-      const name = $('#preset_name').val().trim();
-      const description = $('#preset_description').val().trim();
-
-      if (!name) {
-        if (typeof toastr !== 'undefined') {
-          toastr.warning('请输入预设名称');
-        }
-        return;
-      }
-
-      // 生成唯一ID
-      const id = `custom_${Date.now()}`;
-
-      // 添加到自定义预设
-      if (!this.settings.template_presets.custom) {
-        this.settings.template_presets.custom = [];
-      }
-
-      this.settings.template_presets.custom.push({
-        id,
-        name,
-        template: currentTemplate,
-        description: description || ''
-      });
-
-      // 更新UI并保存
-      this.updateCustomPresetOptions();
-      $('#vectors_enhanced_template_preset').val(id);
-      this.settings.active_preset_id = id;
-      this.updateDeleteButtonVisibility();
-      this.updateAndSave();
-
-      if (typeof toastr !== 'undefined') {
-        toastr.success(`预设"${name}"已保存`);
+      
+      // 如果是自定义模板，保存用户的修改
+      if (presetId.startsWith('custom')) {
+        $('#vectors_enhanced_template').off('input.custom').on('input.custom', () => {
+          const newTemplate = $('#vectors_enhanced_template').val();
+          preset.template = newTemplate;
+          this.settings.template = newTemplate;
+          this.updateAndSave();
+        });
+      } else {
+        $('#vectors_enhanced_template').off('input.custom');
       }
     }
   }
 
   /**
-   * 删除自定义预设
+   * 重命名自定义预设
    */
-  async deleteCustomPreset() {
+  async renameCustomPreset() {
     const selectedId = $('#vectors_enhanced_template_preset').val();
-    if (!selectedId || !selectedId.startsWith('custom_')) {
+    if (!selectedId || !selectedId.startsWith('custom')) {
       return;
     }
 
@@ -723,35 +689,94 @@ export class SettingsManager {
       return;
     }
 
-    const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = await import('../../../popup.js');
+    const { callGenericPopup, POPUP_TYPE } = await import('../../../../../popup.js');
     
-    const result = await callGenericPopup(
-      `确定要删除预设"${preset.name}"吗？`,
-      POPUP_TYPE.CONFIRM,
-      '删除预设'
-    );
+    // 弹出对话框获取新名称
+    const html = `
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div>
+          <label>新名称：</label>
+          <input type="text" id="preset_name" class="text_pole" value="${preset.name}" style="width: 100%;">
+        </div>
+      </div>
+    `;
 
-    if (result === POPUP_RESULT.AFFIRMATIVE) {
-      // 从列表中移除
-      const index = this.settings.template_presets.custom.findIndex(p => p.id === selectedId);
-      if (index !== -1) {
-        this.settings.template_presets.custom.splice(index, 1);
+    const result = await callGenericPopup(html, POPUP_TYPE.INPUT, '重命名模板', { 
+      okButton: '确定',
+      cancelButton: '取消'
+    });
+
+    if (result !== null && result !== false) {
+      // callGenericPopup 返回的是输入的字符串值
+      const newName = String(result).trim();
+      
+      if (!newName) {
+        if (typeof toastr !== 'undefined') {
+          toastr.warning('请输入新名称');
+        }
+        return;
       }
 
-      // 重置选择
-      $('#vectors_enhanced_template_preset').val('');
-      this.settings.active_preset_id = null;
-      
-      // 更新UI
+      // 更新名称
+      preset.name = newName;
+
+      // 更新UI并保存
       this.updateCustomPresetOptions();
-      this.updateDeleteButtonVisibility();
+      
+      // 保持选中状态
+      $('#vectors_enhanced_template_preset').val(selectedId);
+      
       this.updateAndSave();
 
       if (typeof toastr !== 'undefined') {
-        toastr.success(`预设"${preset.name}"已删除`);
+        toastr.success(`已重命名为"${newName}"`);
       }
     }
   }
+
+  // /**
+  //  * 删除自定义预设 - 已弃用，改为固定3个自定义模板
+  //  */
+  // async deleteCustomPreset() {
+  //   const selectedId = $('#vectors_enhanced_template_preset').val();
+  //   if (!selectedId || !selectedId.startsWith('custom_')) {
+  //     return;
+  //   }
+
+  //   const preset = this.settings.template_presets.custom.find(p => p.id === selectedId);
+  //   if (!preset) {
+  //     return;
+  //   }
+
+  //   const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = await import('../../../popup.js');
+    
+  //   const result = await callGenericPopup(
+  //     `确定要删除预设"${preset.name}"吗？`,
+  //     POPUP_TYPE.CONFIRM,
+  //     '删除预设'
+  //   );
+
+  //   if (result === POPUP_RESULT.AFFIRMATIVE) {
+  //     // 从列表中移除
+  //     const index = this.settings.template_presets.custom.findIndex(p => p.id === selectedId);
+  //     if (index !== -1) {
+  //       this.settings.template_presets.custom.splice(index, 1);
+  //     }
+
+  //     // 重置选择
+  //     $('#vectors_enhanced_template_preset').val('');
+  //     this.settings.active_preset_id = null;
+      
+  //     // 更新UI
+  //     this.updateCustomPresetOptions();
+  //     this.updateRenameButtonVisibility();
+  //     this.updateAndSave();
+
+  //     if (typeof toastr !== 'undefined') {
+  //       toastr.success(`预设"${preset.name}"已删除`);
+  //     }
+  //   }
+  // }
 
   /**
    * 更新自定义预设选项
@@ -760,7 +785,8 @@ export class SettingsManager {
     const customGroup = $('#vectors_enhanced_custom_presets_group');
     customGroup.empty();
 
-    if (this.settings.template_presets && this.settings.template_presets.custom && this.settings.template_presets.custom.length > 0) {
+    // 总是显示自定义预设，包括默认的3个
+    if (this.settings.template_presets && this.settings.template_presets.custom) {
       this.settings.template_presets.custom.forEach(preset => {
         const option = $('<option></option>')
           .attr('value', preset.id)
@@ -768,19 +794,17 @@ export class SettingsManager {
           .text(preset.name);
         customGroup.append(option);
       });
-      customGroup.show();
-    } else {
-      customGroup.hide();
     }
+    customGroup.show();
   }
 
   /**
-   * 更新删除按钮的可见性
+   * 更新重命名按钮的可见性
    */
-  updateDeleteButtonVisibility() {
+  updateRenameButtonVisibility() {
     const selectedId = $('#vectors_enhanced_template_preset').val();
-    const isCustom = selectedId && selectedId.startsWith('custom_');
-    $('#vectors_enhanced_delete_preset').toggle(isCustom);
+    const isCustom = selectedId && selectedId.startsWith('custom');
+    $('#vectors_enhanced_rename_preset').toggle(isCustom);
   }
 
   /**
