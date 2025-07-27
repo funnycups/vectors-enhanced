@@ -1613,7 +1613,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       if (settings.selected_content.files && settings.selected_content.files.selected) {
         console.log('Vectors: Clearing file selection after vectorization completion/abort');
         settings.selected_content.files.selected = [];
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
+        
+        // 立即更新UI以反映清理后的状态
+        if (typeof updateFileList === 'function') {
+          await updateFileList();
+        }
       }
     }
 
@@ -1631,7 +1637,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     if (settings.selected_content.files && settings.selected_content.files.selected) {
       console.log('Vectors: Clearing file selection after vectorization error');
       settings.selected_content.files.selected = [];
+      Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
+      
+      // 立即更新UI以反映清理后的状态
+      if (typeof updateFileList === 'function') {
+        await updateFileList();
+      }
     }
 
     if (globalProgressManager) {
@@ -3435,6 +3447,25 @@ jQuery(async () => {
   // 监听聊天重新加载事件，以便在使用 /hide 和 /unhide 命令后更新
   eventSource.on(event_types.CHAT_LOADED, async () => {
     MessageUI.updateHiddenMessagesInfo();
+  });
+
+  // 添加页面卸载处理器，确保设置立即保存
+  $(window).on('beforeunload', () => {
+    if (extension_settings.vectors_enhanced) {
+      // 使用非防抖版本立即保存
+      console.log('Vectors: Page unloading, saving settings immediately');
+      // 直接调用保存，绕过防抖
+      if (typeof window.SillyTavern !== 'undefined' && window.SillyTavern.saveSettings) {
+        window.SillyTavern.saveSettings();
+      } else {
+        // 备用方案：尝试直接保存到localStorage
+        try {
+          localStorage.setItem('extensions_settings', JSON.stringify(extension_settings));
+        } catch (e) {
+          console.error('Vectors: Failed to save settings on unload:', e);
+        }
+      }
+    }
   });
 
   // 监听向量化总结事件
