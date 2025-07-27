@@ -286,27 +286,45 @@ async function previewTaskContent(task) {
       }
     });
 
-    task.actualProcessedItems.world_info.forEach(uid => {
-      const entry = entryMap.get(uid);
-      if (entry) {
-        items.push({
-          type: 'world_info',
-          text: entry.content,
-          metadata: {
-            uid: uid,
-            world: entry.world || '未知',
-            comment: entry.comment || '(无注释)',
-            key: entry.key ? entry.key.join(', ') : ''
-          }
-        });
+    task.actualProcessedItems.world_info.forEach(item => {
+      // Handle both old format (string uid) and new format (object with uid, world, comment)
+      if (typeof item === 'string') {
+        // Old format - try to find entry data
+        const uid = item;
+        const entry = entryMap.get(uid);
+        if (entry) {
+          items.push({
+            type: 'world_info',
+            text: entry.content,
+            metadata: {
+              uid: uid,
+              world: entry.world || '未知',
+              comment: entry.comment || '(无注释)',
+              key: entry.key ? entry.key.join(', ') : ''
+            }
+          });
+        } else {
+          // Fallback if entry not found
+          items.push({
+            type: 'world_info',
+            metadata: {
+              uid: uid,
+              world: '未知',
+              comment: `条目 UID: ${uid}`
+            }
+          });
+        }
       } else {
-        // Fallback if entry not found
+        // New format - use saved data directly
+        const entry = entryMap.get(item.uid);
         items.push({
           type: 'world_info',
+          text: entry ? entry.content : '',
           metadata: {
-            uid: uid,
-            world: '未知',
-            comment: `条目 UID: ${uid}`
+            uid: item.uid,
+            world: item.world || '未知',
+            comment: item.comment || '(无注释)',
+            key: entry && entry.key ? entry.key.join(', ') : ''
           }
         });
       }
