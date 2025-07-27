@@ -138,7 +138,9 @@ export const MessageUI = {
           if (msg.is_system) return;
 
           let extractedText;
-          if (absoluteIndex === 0 || msg.is_user === true) {
+          const applyTagsToFirstMessage = chatSettings.apply_tags_to_first_message || false;
+          
+          if ((absoluteIndex === 0 && !applyTagsToFirstMessage) || msg.is_user === true) {
             extractedText = msg.mes;
           } else {
             extractedText = extractTagContent(msg.mes, rules, settings.content_blacklist || []);

@@ -149,6 +149,15 @@ export async function updateWorldInfoList() {
     // Save the cleaned settings
     Object.assign(extension_settings.vectors_enhanced, settings);
     saveSettingsDebounced();
+    
+    // 通知UI更新 - 触发世界信息列表重新渲染
+    if (removedCount > 0) {
+      console.debug('Vectors: Triggering UI update after world info cleanup');
+      // 延迟一下确保设置已保存
+      setTimeout(() => {
+        updateWorldInfoList();
+      }, 100);
+    }
   }
 
   // Display by source category

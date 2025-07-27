@@ -721,3 +721,9 @@
 #vectors_enhanced_import_external_task i {
     font-size: 0.9em;
 }
+
+/* Master switch control - 总开关控制 */
+/* 当总开关关闭时，隐藏除了总开关区域外的所有内容 */
+#vectors_enhanced_container:has(#vectors_enhanced_master_enabled:not(:checked)) .vectors-enhanced-section:not(:first-child) {
+    display: none !important;
+}

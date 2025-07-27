@@ -184,19 +184,32 @@ export class ContentSelectionSettings {
     /**
      * Handle content type toggle (chat/files/wi)
      */
-    handleContentTypeToggle(type, enabled) {
+    async handleContentTypeToggle(type, enabled) {
         console.log(`ContentSelectionSettings: ${type} ${enabled ? 'enabled' : 'disabled'}`);
 
         // Update settings
         const keyPath = this.contentTypes[type].settingsKey.split('.');
         this.setNestedProperty(this.settings, keyPath, enabled);
+        
+        // IMPORTANT: Clear internal selections when disabling
+        if (!enabled) {
+            this.clearContentTypeSelections(type);
+            console.log(`ContentSelectionSettings: Cleared ${type} selections`);
+        }
+        
+        // Force immediate save (bypass debounce)
         this.saveSettings();
+        this.forceImmediateSave();
 
         // Update UI visibility
         this.updateContentTypeVisibility(type, enabled);
 
-        // Refresh content lists if enabled
-        if (enabled) {
+        // Force immediate UI refresh to reflect cleared selections
+        if (!enabled) {
+            // Use await to ensure UI is updated before continuing
+            await this.forceRefreshContentType(type);
+        } else {
+            // Normal refresh for enabling
             this.refreshContentType(type);
         }
 
@@ -490,6 +503,90 @@ export class ContentSelectionSettings {
         });
 
         return status;
+    }
+
+    /**
+     * Clear all selections for a content type
+     */
+    clearContentTypeSelections(type) {
+        console.log(`ContentSelectionSettings: Clearing selections for ${type}`);
+        
+        switch(type) {
+            case 'chat':
+                // Reset chat settings to defaults but keep range
+                this.settings.selected_content.chat.types = { user: true, assistant: true };
+                this.settings.selected_content.chat.include_hidden = false;
+                break;
+                
+            case 'files':
+                // Clear all file selections
+                if (this.settings.selected_content.files.selected) {
+                    this.settings.selected_content.files.selected = [];
+                }
+                break;
+                
+            case 'wi':
+                // Clear all world info selections
+                if (this.settings.selected_content.world_info.selected) {
+                    this.settings.selected_content.world_info.selected = {};
+                }
+                break;
+        }
+        
+        console.log(`ContentSelectionSettings: Cleared ${type} selections`);
+    }
+
+    /**
+     * Force immediate save without debounce
+     */
+    forceImmediateSave() {
+        console.log('ContentSelectionSettings: Forcing immediate save');
+        
+        // 直接调用保存，绕过防抖
+        if (typeof window.SillyTavern !== 'undefined' && window.SillyTavern.saveSettings) {
+            window.SillyTavern.saveSettings();
+        } else {
+            // 备用方案：尝试直接保存到localStorage
+            try {
+                const extensionSettings = window.extension_settings || {};
+                localStorage.setItem('extensions_settings', JSON.stringify(extensionSettings));
+                console.log('ContentSelectionSettings: Saved to localStorage directly');
+            } catch (e) {
+                console.error('ContentSelectionSettings: Failed to save immediately:', e);
+            }
+        }
+    }
+
+    /**
+     * Force refresh UI for a content type
+     */
+    async forceRefreshContentType(type) {
+        console.log(`ContentSelectionSettings: Force refreshing ${type} UI`);
+        
+        // 立即刷新对应类型的UI
+        switch (type) {
+            case 'chat':
+                if (this.updateChatSettings) {
+                    await Promise.resolve(this.updateChatSettings());
+                }
+                break;
+                
+            case 'files':
+                if (this.updateFileList) {
+                    await Promise.resolve(this.updateFileList());
+                }
+                break;
+                
+            case 'wi':
+                if (this.updateWorldInfoList) {
+                    await Promise.resolve(this.updateWorldInfoList());
+                }
+                break;
+        }
+        
+        // 确保UI已经更新
+        await new Promise(resolve => setTimeout(resolve, 100));
+        console.log(`ContentSelectionSettings: ${type} UI refresh completed`);
     }
 
     /**

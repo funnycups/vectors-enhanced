@@ -193,7 +193,26 @@ const settings = {
         description: '强调是新添加的记录'
       }
     ],
-    custom: []
+    custom: [
+      {
+        id: 'custom1',
+        name: '自定义模板1',
+        template: '',
+        description: '用户自定义模板'
+      },
+      {
+        id: 'custom2',
+        name: '自定义模板2',
+        template: '',
+        description: '用户自定义模板'
+      },
+      {
+        id: 'custom3',
+        name: '自定义模板3',
+        template: '',
+        description: '用户自定义模板'
+      }
+    ]
   },
   active_preset_id: null,
 
@@ -1517,7 +1536,11 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       const actualProcessedItems = {
         chat: items.filter(item => item.type === 'chat').map(item => item.metadata.index),
         files: items.filter(item => item.type === 'file').map(item => item.metadata.url),
-        world_info: items.filter(item => item.type === 'world_info').map(item => item.metadata.uid)
+        world_info: items.filter(item => item.type === 'world_info').map(item => ({
+          uid: item.metadata.uid,
+          world: item.metadata.world,
+          comment: item.metadata.comment || '(无注释)'
+        }))
       };
 
       // Create task object
@@ -1609,7 +1632,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       if (settings.selected_content.files && settings.selected_content.files.selected) {
         console.log('Vectors: Clearing file selection after vectorization completion/abort');
         settings.selected_content.files.selected = [];
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
+        
+        // 立即更新UI以反映清理后的状态
+        if (typeof updateFileList === 'function') {
+          await updateFileList();
+        }
       }
     }
 
@@ -1627,7 +1656,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     if (settings.selected_content.files && settings.selected_content.files.selected) {
       console.log('Vectors: Clearing file selection after vectorization error');
       settings.selected_content.files.selected = [];
+      Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
+      
+      // 立即更新UI以反映清理后的状态
+      if (typeof updateFileList === 'function') {
+        await updateFileList();
+      }
     }
 
     if (globalProgressManager) {
@@ -1735,7 +1770,8 @@ function getProcessedItemIdentifiers(chatId) {
     const identifiers = {
         chat: new Set(),
         file: new Set(),
-        world_info: new Set()
+        world_info: new Set(),
+        world_info_with_world: new Map() // 新增：存储 uid -> world 的映射
     };
     const enabledTasks = getChatTasks(chatId).filter(t => t.enabled);
 
@@ -1750,7 +1786,21 @@ function getProcessedItemIdentifiers(chatId) {
                 task.actualProcessedItems.files.forEach(url => identifiers.file.add(url));
             }
             if (task.actualProcessedItems.world_info) {
-                task.actualProcessedItems.world_info.forEach(uid => identifiers.world_info.add(uid));
+                task.actualProcessedItems.world_info.forEach(item => {
+                    // Handle both old format (string uid) and new format (object with uid)
+                    if (typeof item === 'string') {
+                        identifiers.world_info.add(item);
+                        // 旧格式没有世界书名字信息
+                    } else if (item.uid !== undefined && item.uid !== null) {
+                        // 统一转换为字符串以确保类型一致
+                        const uidStr = String(item.uid);
+                        identifiers.world_info.add(uidStr);
+                        // 新格式：记录 uid 对应的世界书名字
+                        if (item.world) {
+                            identifiers.world_info_with_world.set(uidStr, item.world);
+                        }
+                    }
+                });
             }
         } else {
             // 外挂任务没有settings，跳过
@@ -1916,7 +1966,23 @@ async function vectorizeContent() {
         switch (item.type) {
             case 'chat': return !processedIdentifiers.chat.has(item.metadata.index);
             case 'file': return !processedIdentifiers.file.has(item.metadata.url);
-            case 'world_info': return !processedIdentifiers.world_info.has(item.metadata.uid);
+            case 'world_info': {
+                // 对于世界书，需要同时检查 UID 和世界书名字
+                // 统一转换为字符串以确保类型一致
+                const uidStr = String(item.metadata.uid);
+                if (!processedIdentifiers.world_info.has(uidStr)) {
+                    // UID 未被处理过，这是新项目
+                    return true;
+                }
+                // UID 已存在，检查是否来自同一个世界书
+                const processedWorld = processedIdentifiers.world_info_with_world.get(uidStr);
+                if (!processedWorld) {
+                    // 旧格式任务，没有世界书信息，保守起见认为是重复的
+                    return false;
+                }
+                // 如果世界书名字不同，则认为是新项目（不同世界书的相同 UID）
+                return processedWorld !== item.metadata.world;
+            }
             default: return true;
         }
     });
@@ -1937,7 +2003,21 @@ async function vectorizeContent() {
         const processedParts = [];
         if (processedChatItems.length > 0) processedParts.push(`聊天记录: ${formatRanges(processedChatItems)}`);
         if (processedFileItems.length > 0) processedParts.push(`文件: ${processedFileItems.length}个`);
-        if (processedWorldInfoItems.length > 0) processedParts.push(`世界信息: ${processedWorldInfoItems.length}条`);
+        if (processedWorldInfoItems.length > 0) {
+            // Group world info by world name
+            const worldGroups = {};
+            processedWorldInfoItems.forEach(item => {
+                const worldName = item.metadata.world || '未知';
+                if (!worldGroups[worldName]) worldGroups[worldName] = [];
+                worldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
+            });
+            
+            const worldDetails = Object.entries(worldGroups).map(([world, entries]) => 
+                `${world} (${entries.length}条)`
+            ).join(', ');
+            
+            processedParts.push(`世界信息: ${worldDetails}`);
+        }
 
         const confirm = await callGenericPopup(
             `<div>
@@ -1974,11 +2054,39 @@ async function vectorizeContent() {
 
         if (newChatItems.length > 0) newParts.push(`新增聊天: ${formatRanges(newChatItems)}`);
         if (newFileItems.length > 0) newParts.push(`新增文件: ${newFileItems.length}个`);
-        if (newWorldInfoItems.length > 0) newParts.push(`新增世界信息: ${newWorldInfoItems.length}条`);
+        if (newWorldInfoItems.length > 0) {
+            // Group new world info by world name
+            const newWorldGroups = {};
+            newWorldInfoItems.forEach(item => {
+                const worldName = item.metadata.world || '未知';
+                if (!newWorldGroups[worldName]) newWorldGroups[worldName] = [];
+                newWorldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
+            });
+            
+            const newWorldDetails = Object.entries(newWorldGroups).map(([world, entries]) => 
+                `${world} (${entries.length}条)`
+            ).join(', ');
+            
+            newParts.push(`新增世界信息: ${newWorldDetails}`);
+        }
 
         if (processedChatItems.length > 0) processedParts.push(`已处理聊天: ${formatRanges(processedChatItems)}`);
         if (processedFileItems.length > 0) processedParts.push(`已处理文件: ${processedFileItems.length}个`);
-        if (processedWorldInfoItems.length > 0) processedParts.push(`已处理世界信息: ${processedWorldInfoItems.length}条`);
+        if (processedWorldInfoItems.length > 0) {
+            // Group processed world info by world name
+            const processedWorldGroups = {};
+            processedWorldInfoItems.forEach(item => {
+                const worldName = item.metadata.world || '未知';
+                if (!processedWorldGroups[worldName]) processedWorldGroups[worldName] = [];
+                processedWorldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
+            });
+            
+            const processedWorldDetails = Object.entries(processedWorldGroups).map(([world, entries]) => 
+                `${world} (${entries.length}条)`
+            ).join(', ');
+            
+            processedParts.push(`已处理世界信息: ${processedWorldDetails}`);
+        }
 
         const confirm = await callGenericPopup(
             `<div>
@@ -3017,6 +3125,48 @@ jQuery(async () => {
     settings.rerank_deduplication_instruction = 'Execute the following operations:\n1. Sort documents by relevance in descending order\n2. Consider documents as duplicates if they meet ANY of these conditions:\n   - Core content overlap exceeds 60% (reduced from 80% for better precision)\n   - Contains identical continuous passages of 5+ words\n   - Shares the same examples, data points, or evidence\n3. When evaluating duplication, consider metadata differences:\n   - Different originalIndex values indicate temporal separation\n   - Different chunk numbers (chunk=X/Y) from the same entry should be preserved\n   - Different floor numbers represent different chronological positions\n   - Different world info entries or chapter markers indicate distinct contexts\n4. For identified duplicates, keep only the most relevant one, demote others to bottom 30% positions (reduced from 50% for gentler deduplication)';
   }
 
+  // 迁移模板预设数据结构
+  if (settings.template_presets) {
+    // 确保有3个默认的自定义模板
+    if (!settings.template_presets.custom || settings.template_presets.custom.length === 0) {
+      settings.template_presets.custom = [
+        {
+          id: 'custom1',
+          name: '自定义模板1',
+          template: '',
+          description: '用户自定义模板'
+        },
+        {
+          id: 'custom2',
+          name: '自定义模板2',
+          template: '',
+          description: '用户自定义模板'
+        },
+        {
+          id: 'custom3',
+          name: '自定义模板3',
+          template: '',
+          description: '用户自定义模板'
+        }
+      ];
+    } else if (settings.template_presets.custom.length > 0) {
+      // 如果用户有旧的自定义预设，保留前3个并确保ID正确
+      const existingCustom = settings.template_presets.custom.slice(0, 3);
+      const newCustom = [
+        existingCustom[0] || { id: 'custom1', name: '自定义模板1', template: '', description: '用户自定义模板' },
+        existingCustom[1] || { id: 'custom2', name: '自定义模板2', template: '', description: '用户自定义模板' },
+        existingCustom[2] || { id: 'custom3', name: '自定义模板3', template: '', description: '用户自定义模板' }
+      ];
+      
+      // 确保ID正确
+      newCustom[0].id = 'custom1';
+      newCustom[1].id = 'custom2';
+      newCustom[2].id = 'custom3';
+      
+      settings.template_presets.custom = newCustom;
+    }
+  }
+
    // 确保所有必需的结构都存在
   if (!settings.selected_content.chat.range) {
     settings.selected_content.chat.range = { start: 0, end: -1 };
@@ -3360,6 +3510,25 @@ jQuery(async () => {
     MessageUI.updateHiddenMessagesInfo();
   });
 
+  // 添加页面卸载处理器，确保设置立即保存
+  $(window).on('beforeunload', () => {
+    if (extension_settings.vectors_enhanced) {
+      // 使用非防抖版本立即保存
+      console.log('Vectors: Page unloading, saving settings immediately');
+      // 直接调用保存，绕过防抖
+      if (typeof window.SillyTavern !== 'undefined' && window.SillyTavern.saveSettings) {
+        window.SillyTavern.saveSettings();
+      } else {
+        // 备用方案：尝试直接保存到localStorage
+        try {
+          localStorage.setItem('extensions_settings', JSON.stringify(extension_settings));
+        } catch (e) {
+          console.error('Vectors: Failed to save settings on unload:', e);
+        }
+      }
+    }
+  });
+
   // 监听向量化总结事件
   document.addEventListener('vectors:vectorize-summary', async (event) => {
     const { taskName, taskId, content, worldName } = event.detail;
@@ -3432,7 +3601,23 @@ jQuery(async () => {
         switch (item.type) {
           case 'chat': return !processedIdentifiers.chat.has(item.metadata.index);
           case 'file': return !processedIdentifiers.file.has(item.metadata.url);
-          case 'world_info': return !processedIdentifiers.world_info.has(item.metadata.uid);
+          case 'world_info': {
+            // 对于世界书，需要同时检查 UID 和世界书名字
+            // 统一转换为字符串以确保类型一致
+            const uidStr = String(item.metadata.uid);
+            if (!processedIdentifiers.world_info.has(uidStr)) {
+              // UID 未被处理过，这是新项目
+              return true;
+            }
+            // UID 已存在，检查是否来自同一个世界书
+            const processedWorld = processedIdentifiers.world_info_with_world.get(uidStr);
+            if (!processedWorld) {
+              // 旧格式任务，没有世界书信息，保守起见认为是重复的
+              return false;
+            }
+            // 如果世界书名字不同，则认为是新项目（不同世界书的相同 UID）
+            return processedWorld !== item.metadata.world;
+          }
           default: return true;
         }
       });
