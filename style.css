@@ -747,6 +747,31 @@
     font-size: 0.9em;
 }
 
+/* 查询存储地址按钮样式 */
+#vectors_enhanced_query_storage_path {
+    padding: 8px 16px;
+    font-size: 0.9em;
+    border-radius: 4px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+#vectors_enhanced_query_storage_path:hover {
+    background: var(--SmartThemeEmColor);
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+#vectors_enhanced_query_storage_path i {
+    font-size: 0.9em;
+}
+
 /* Master switch control - 总开关控制 */
 /* 当总开关关闭时，隐藏除了总开关区域外的所有内容 */
 #vectors_enhanced_container:has(#vectors_enhanced_master_enabled:not(:checked)) .vectors-enhanced-section:not(:first-child) {

@@ -74,6 +74,9 @@ export class SettingsManager {
     // 初始化外挂任务UI
     await this.initializeExternalTaskUI();
     
+    // 初始化向量存储路径UI
+    await this.initializeVectorStoragePathUI();
+    
     // 初始化实验性设置
     this.initializeExperimentalSettings();
     
@@ -1126,6 +1129,30 @@ export class SettingsManager {
         console.log('External Task UI initialized successfully (legacy mode)');
     } catch (error) {
       console.error('Failed to initialize External Task UI:', error);
+    }
+  }
+
+  /**
+   * 初始化向量存储路径UI
+   */
+  async initializeVectorStoragePathUI() {
+    try {
+      // 动态导入VectorStoragePathUI
+      const modulePath = '/scripts/extensions/third-party/vectors-enhanced/src/ui/components/VectorStoragePathUI.js';
+      const { VectorStoragePathUI } = await import(modulePath);
+      
+      // 创建并初始化向量存储路径UI
+      const vectorStoragePathUI = new VectorStoragePathUI();
+      
+      // 传入settings对象
+      await vectorStoragePathUI.init(this.settings);
+        
+      // 保存引用以便后续使用
+      this.vectorStoragePathUI = vectorStoragePathUI;
+        
+      console.log('Vector Storage Path UI initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Vector Storage Path UI:', error);
     }
   }
 }
