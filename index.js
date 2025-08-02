@@ -2617,9 +2617,19 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         Object.keys(groupedResults).map(k => `${k}: ${groupedResults[k].length}`),
       );
 
-      // Sort each group by originalIndex (if available)
+      // Sort each group by taskId first, then by originalIndex within same task
       Object.keys(groupedResults).forEach(type => {
         groupedResults[type].sort((a, b) => {
+          // First, sort by taskId to keep same task content together
+          const aTaskId = a.metadata?.taskId || '';
+          const bTaskId = b.metadata?.taskId || '';
+          
+          if (aTaskId !== bTaskId) {
+            // Different tasks - sort by taskId to keep them separate
+            return aTaskId.localeCompare(bTaskId);
+          }
+          
+          // Same task - now sort by originalIndex within the task
           // First try to decode originalIndex from text
           const aDecoded = decodeMetadataFromText(a.text);
           const bDecoded = decodeMetadataFromText(b.text);
@@ -2654,7 +2664,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           }
         });
         
-        console.debug(`Vectors: Sorted ${type} results by originalIndex (${type === 'world_info' ? 'custom logic' : 'ascending'})`);
+        console.debug(`Vectors: Sorted ${type} results by taskId and originalIndex`);
       });
 
       // Format results with tags
