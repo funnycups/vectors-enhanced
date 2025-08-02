@@ -506,9 +506,7 @@ export class SettingsManager {
       .on('input', () => {
         this.settings.template = String($('#vectors_enhanced_template').val());
         this.updateAndSave();
-        // 如果用户手动修改了模板，清除当前预设选择
-        $('#vectors_enhanced_template_preset').val('');
-        this.settings.active_preset_id = null;
+        // 用户手动修改了模板，但保持当前预设选择（允许用户基于预设进行修改）
       });
 
     // 深度
@@ -620,12 +618,6 @@ export class SettingsManager {
       const selectedId = $('#vectors_enhanced_template_preset').val();
       if (selectedId) {
         this.applyPreset(selectedId);
-      } else {
-        // 选择自定义模板时，清空文本框
-        $('#vectors_enhanced_template').val('');
-        this.settings.template = '';
-        this.settings.active_preset_id = null;
-        this.updateAndSave();
       }
       this.updateRenameButtonVisibility();
     });
@@ -689,25 +681,21 @@ export class SettingsManager {
       return;
     }
 
-    const { callGenericPopup, POPUP_TYPE } = await import('../../../../../popup.js');
+    const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = await import('../../../../../popup.js');
     
-    // 弹出对话框获取新名称
-    const html = `
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <div>
-          <label>新名称：</label>
-          <input type="text" id="preset_name" class="text_pole" value="${preset.name}" style="width: 100%;">
-        </div>
-      </div>
-    `;
-
-    const result = await callGenericPopup(html, POPUP_TYPE.INPUT, '重命名模板', { 
-      okButton: '确定',
-      cancelButton: '取消'
-    });
+    // 使用 INPUT 类型，直接传入当前名称作为默认值
+    const result = await callGenericPopup(
+      '请输入新的模板名称：', 
+      POPUP_TYPE.INPUT, 
+      preset.name,  // 默认值
+      { 
+        okButton: '确定',
+        cancelButton: '取消'
+      }
+    );
 
     if (result !== null && result !== false) {
-      // callGenericPopup 返回的是输入的字符串值
+      // INPUT 类型会直接返回输入的字符串值
       const newName = String(result).trim();
       
       if (!newName) {
