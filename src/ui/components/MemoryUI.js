@@ -51,7 +51,8 @@ const defaultMemorySettings = {
     openai_compatible: {
         url: '',
         model: '',
-        apiKey: ''  // 添加API密钥字段
+        apiKey: '',  // 添加API密钥字段
+        proxyMode: false  // 反代专用模式，默认关闭
     },
     // prompts removed - using preset format
     autoSummarize: {
@@ -698,7 +699,8 @@ export class MemoryUI {
                 return {
                     url: $('#memory_openai_url').val(),
                     apiKey: $('#memory_openai_api_key').val(),
-                    model: $('#memory_openai_model').val() || ''
+                    model: $('#memory_openai_model').val() || '',
+                    proxyMode: $('#memory_openai_proxy_mode').prop('checked') || false
                 };
             case 'google_openai':
                 return {
@@ -730,7 +732,8 @@ export class MemoryUI {
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
                 model: $('#memory_openai_model').val() || '',
-                apiKey: $('#memory_openai_api_key').val() || ''  // 直接保存API密钥
+                apiKey: $('#memory_openai_api_key').val() || '',  // 直接保存API密钥
+                proxyMode: $('#memory_openai_proxy_mode').prop('checked') || false
             },
             google_openai: {
                 model: $('#memory_google_openai_model').val() || '',
@@ -796,6 +799,7 @@ export class MemoryUI {
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
         $('#memory_openai_api_key').val(config.openai_compatible?.apiKey || '');  // 从设置加载API密钥
+        $('#memory_openai_proxy_mode').prop('checked', config.openai_compatible?.proxyMode || false);
         $('#memory_google_openai_model').val(config.google_openai?.model || '');
         $('#memory_google_openai_api_key').val(config.google_openai?.apiKey || '');  // 从设置加载API密钥
         

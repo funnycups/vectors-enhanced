@@ -242,7 +242,7 @@ export class MemoryService {
      * @returns {Promise<string>} AI响应
      */
     async callOpenAICompatibleAPI(prompt, config, summaryFormat = '', maxTokens = 8192) {
-        const { url, apiKey, model } = config;
+        const { url, apiKey, model, proxyMode } = config;
 
         if (!url || !apiKey) {
             throw new Error('请先配置API端点和密钥');
@@ -303,12 +303,24 @@ export class MemoryService {
                 content: 'doudou:我已经深刻学习上述纲领，并已经完成思考，接下来会直接输出总结内容：'
             });
 
+            // 根据是否启用反代模式决定请求头
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            };
+            
+            // 如果是反代模式，不添加任何额外的头部（如 CSRF token）
+            // 否则，可能会包含 SillyTavern 的请求头
+            if (!proxyMode && typeof getRequestHeaders === 'function') {
+                // 获取标准请求头但移除 CSRF token
+                const standardHeaders = getRequestHeaders();
+                delete standardHeaders['X-CSRF-Token'];
+                Object.assign(headers, standardHeaders);
+            }
+            
             const response = await fetch(apiUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
+                headers: headers,
                 body: JSON.stringify({
                     messages: messages,
                     model: model || 'gpt-3.5-turbo',

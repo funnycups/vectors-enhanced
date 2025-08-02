@@ -260,6 +260,11 @@
                        class="text_pole"
                        placeholder="例如: gpt-3.5-turbo, gpt-4, claude-3-sonnet, deepseek-chat"
                        style="width: 100%;" />
+                       
+                <label class="checkbox_label" style="margin-top: 10px;">
+                  <input id="memory_openai_proxy_mode" type="checkbox" />
+                  <span>反代专用模式</span>
+                </label>
               </div>
 
               <!-- Google to OpenAI Settings -->
@@ -292,7 +297,6 @@
           <div class="memory-summary-format" style="margin-top: 10px;">
             <label for="memory_summary_format">
               <small>总结格式模板:</small>
-              <small style="opacity: 0.7; margin-left: 5px;">(支持变量: {{content}} 为待总结内容)</small>
               <button id="reset_memory_summary_format" 
                       class="menu_button menu_button_icon" 
                       title="重置为默认值"
