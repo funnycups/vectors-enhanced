@@ -106,6 +106,20 @@
                 <span>查看示例</span>
               </button>
             </div>
+            <!-- 预设管理区域 -->
+            <div class="tag-preset-management m-t-0-5 m-b-0-5">
+              <div class="flex-container alignItemsCenter">
+                <select id="vectors_enhanced_tag_preset_selector" class="text_pole flex1">
+                  <option value="">默认规则</option>
+                </select>
+                <button id="vectors_enhanced_tag_preset_save" class="menu_button menu_button_icon" title="将当前规则保存为预设">
+                  <i class="fa-solid fa-save"></i>
+                </button>
+                <button id="vectors_enhanced_tag_preset_rename" class="menu_button menu_button_icon" title="重命名当前预设" style="display: none;">
+                  <i class="fa-solid fa-pen"></i>
+                </button>
+              </div>
+            </div>
             <label class="checkbox_label m-t-0-5">
               <input id="vectors_enhanced_apply_tags_to_first_message" type="checkbox" />
               <span>对第0层（角色卡）也应用标签提取规则</span>

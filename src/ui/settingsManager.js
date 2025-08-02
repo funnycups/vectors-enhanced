@@ -7,6 +7,7 @@ import { ConfigManager } from '../infrastructure/ConfigManager.js';
 import { updateFileList } from './components/FileList.js';
 import { updateWorldInfoList } from './components/WorldInfoList.js';
 import { renderTagRulesUI } from './components/TagRulesEditor.js';
+import { tagPresetManager } from './components/TagPresetManager.js';
 import { updateTaskList } from './components/TaskList.js';
 import { MessageUI } from './components/MessageUI.js';
 import { MemoryUI } from './components/MemoryUI.js';
@@ -964,6 +965,9 @@ export class SettingsManager {
       renderTagRulesUI();
       toastr.success(`已添加规则：删除 <${tagName}> 标签之前的所有内容`);
     });
+
+    // 初始化标签预设管理器
+    tagPresetManager.initializeEventHandlers();
   }
 
   /**

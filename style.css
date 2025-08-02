@@ -619,6 +619,31 @@
     color: var(--SmartThemeEmColor);
 }
 
+/* Fix inconsistent font sizes for checkbox labels and tooltips */
+.checkbox_label.m-t-0-5 span {
+    font-size: 0.9em;
+}
+
+/* Tag preset management styles */
+.tag-preset-management {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.tag-preset-management .flex-container {
+    gap: 0.5rem;
+}
+
+#vectors_enhanced_tag_preset_selector {
+    min-width: 150px;
+}
+
+#vectors_enhanced_tag_preset_save {
+    white-space: nowrap;
+}
+
 /* External Task Styles - 外挂任务样式（旧版已移除，使用新的布局样式） */
 
 /* 任务列表项统一高度 */
