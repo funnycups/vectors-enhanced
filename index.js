@@ -1214,6 +1214,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
   const { FileExtractor } = await import('./src/core/extractors/FileExtractor.js');
   const { WorldInfoExtractor } = await import('./src/core/extractors/WorldInfoExtractor.js');
 
+  // 声明在外部作用域的变量，以便在 catch 块中访问
+  let allProcessedChunks = [];
+  let taskId;
+  let taskName;
+  let correctedSettings;
+  let actualProcessedItems;
+
   try {
     // Initialize pipeline with full functionality
     if (!pipelineIntegration.isEnabled()) {
@@ -1226,7 +1233,6 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     }
 
     // Generate task metadata
-    let taskName;
     if (customTaskName) {
       // Use custom task name if provided
       taskName = customTaskName;
@@ -1243,8 +1249,12 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     $('#vectors_enhanced_vectorize').hide();
     $('#vectors_enhanced_abort').show();
 
+    // 添加进度跟踪变量
+    let processedChunksCount = 0;
+    let totalItemsCount = items.length;
+
     // Create task and collection IDs
-    const taskId = generateTaskId();
+    taskId = generateTaskId();
     const collectionId = `${chatId}_${taskId}`;
     let vectorsInserted = false;
 
@@ -1351,8 +1361,6 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
           force_chunk_delimiter: settings.force_chunk_delimiter
         }
       };
-
-      const allProcessedChunks = [];
 
       // Process each content block through the pipeline
       for (let i = 0; i < extractedContent.length; i++) {
@@ -1485,6 +1493,8 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         const batch = allProcessedChunks.slice(i, Math.min(i + batchSize, allProcessedChunks.length));
         await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal, { skipDeduplication });
         vectorsInserted = true;
+        // 更新已处理的块数
+        processedChunksCount = Math.min(i + batch.length, allProcessedChunks.length);
 
         if (globalProgressManager) {
           globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, '向量存储中...');
@@ -1609,17 +1619,100 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       // Handle abort
       if (error.message === '向量化被用户中断' || vectorizationAbortController.signal.aborted) {
         if (vectorsInserted) {
-          await storageAdapter.purgeVectorIndex(collectionId);
+          // 显示确认对话框
+          const confirm = await callGenericPopup(
+            `<div>
+                <p><strong>向量化已中断</strong></p>
+                <div style="text-align: left; margin: 15px 0;">
+                    <p>处理进度：</p>
+                    <ul style="margin: 5px 0 15px 20px;">
+                        <li>已处理块数：${processedChunksCount} / ${allProcessedChunks.length}</li>
+                        <li>原始项目数：${totalItemsCount}</li>
+                        <li>完成度：${Math.round((processedChunksCount / allProcessedChunks.length) * 100)}%</li>
+                    </ul>
+                </div>
+                <p style="margin-top: 15px;">是否保存已处理的内容？</p>
+                <p style="font-size: 0.9em; color: var(--SmartThemeQuoteColor);">
+                    选择"是"将保留已处理的数据并创建部分完成的任务。<br>
+                    选择"否"将清理所有已处理的数据。
+                </p>
+            </div>`,
+            POPUP_TYPE.CONFIRM,
+            { okButton: '是，保存', cancelButton: '否，清理' }
+          );
+
+          if (confirm === POPUP_RESULT.AFFIRMATIVE) {
+            // 用户选择保存 - 创建部分完成的任务
+            
+            // 只保留已处理的部分
+            const processedChunks = allProcessedChunks.slice(0, processedChunksCount);
+            
+            // 创建任务对象
+            const task = {
+              taskId: taskId,
+              name: taskName + ' (部分完成)',
+              timestamp: Date.now(),
+              settings: correctedSettings,
+              enabled: true,
+              itemCount: processedChunks.length,
+              originalItemCount: items.length,
+              isIncremental: isIncremental,
+              isPartial: true,  // 标记为部分完成
+              completionRate: Math.round((processedChunksCount / allProcessedChunks.length) * 100),
+              actualProcessedItems: actualProcessedItems,
+              version: '2.0'
+            };
+
+            // 添加任务到列表
+            addVectorTask(chatId, task);
+
+            // 更新缓存
+            cachedVectors.set(collectionId, {
+              timestamp: Date.now(),
+              hashes: processedChunks.map(chunk => chunk.hash),
+              itemCount: processedChunks.length,
+              settings: JSON.parse(JSON.stringify(settings)),
+              isPartial: true
+            });
+
+            toastr.info(`向量化已中断，已保存 ${processedChunksCount} 个块的数据`, '部分保存');
+            
+            // 刷新任务列表
+            await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+            
+            return {
+              success: false,
+              aborted: true,
+              partial: true,
+              savedCount: processedChunksCount,
+              error: '用户中断操作（已保存部分数据）'
+            };
+          } else {
+            // 用户选择清理
+            await storageAdapter.purgeVectorIndex(collectionId);
+            toastr.info('向量化已中断，已清理部分数据', '中断');
+            return {
+              success: false,
+              aborted: true,
+              error: '用户中断操作'
+            };
+          }
+        } else {
+          // 还没有插入任何数据
+          toastr.info('向量化已中断', '中断');
+          return {
+            success: false,
+            aborted: true,
+            error: '用户中断操作'
+          };
         }
-        toastr.info('向量化已中断，已清理部分数据', '中断');
       } else {
         if (vectorsInserted) {
           await storageAdapter.purgeVectorIndex(collectionId);
         }
         toastr.error('向量化内容失败', '错误');
+        throw error; // 只有真正的错误才抛出
       }
-
-      throw error;
 
     } finally {
       // Reset state
