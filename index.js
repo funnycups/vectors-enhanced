@@ -1220,6 +1220,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
   let taskName;
   let correctedSettings;
   let actualProcessedItems;
+  let lastSavedChunk = null; // 追踪最后成功保存的 chunk
 
   try {
     // Initialize pipeline with full functionality
@@ -1495,6 +1496,11 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorsInserted = true;
         // 更新已处理的块数
         processedChunksCount = Math.min(i + batch.length, allProcessedChunks.length);
+        
+        // 追踪最后成功保存的 chunk
+        if (batch.length > 0) {
+          lastSavedChunk = batch[batch.length - 1];
+        }
 
         if (globalProgressManager) {
           globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, '向量存储中...');
@@ -1619,6 +1625,46 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       // Handle abort
       if (error.message === '向量化被用户中断' || vectorizationAbortController.signal.aborted) {
         if (vectorsInserted) {
+          // 提取最后保存块的metadata信息
+          let lastChunkInfo = '';
+          if (lastSavedChunk && lastSavedChunk.text) {
+            const decoded = decodeMetadataFromText(lastSavedChunk.text);
+            if (decoded.metadata) {
+              const meta = decoded.metadata;
+              let infoText = '';
+              
+              // 根据类型显示不同的信息
+              if (meta.type === 'chat') {
+                infoText = `聊天消息 #${meta.originalIndex || '未知'}`;
+              } else if (meta.type === 'file') {
+                infoText = `文件块 (索引: ${meta.originalIndex || '未知'})`;
+              } else if (meta.type === 'world_info') {
+                if (meta.entry) {
+                  infoText = `世界信息: ${meta.entry}`;
+                  if (meta.chunk) {
+                    infoText += ` (${meta.chunk})`;
+                  }
+                } else {
+                  infoText = `世界信息块 (索引: ${meta.originalIndex || '未知'})`;
+                }
+              } else {
+                infoText = `${meta.type || '未知类型'} (索引: ${meta.originalIndex || '未知'})`;
+              }
+              
+              // 显示前120个字符
+              const textPreview = lastSavedChunk.text ? 
+                lastSavedChunk.text.substring(0, 120) + (lastSavedChunk.text.length > 120 ? '...' : '') : 
+                '(无内容)';
+              
+              lastChunkInfo = `
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
+                    <p style="margin: 0 0 5px 0;"><strong>最后保存的块：</strong></p>
+                    <p style="margin: 0 0 3px 0; font-size: 0.9em;">类型：${infoText}</p>
+                    <p style="margin: 0; font-size: 0.9em; color: var(--SmartThemeQuoteColor);">内容预览：${textPreview}</p>
+                </div>`;
+            }
+          }
+          
           // 显示确认对话框
           const confirm = await callGenericPopup(
             `<div>
@@ -1631,6 +1677,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
                         <li>完成度：${Math.round((processedChunksCount / allProcessedChunks.length) * 100)}%</li>
                     </ul>
                 </div>
+                ${lastChunkInfo}
                 <p style="margin-top: 15px;">是否保存已处理的内容？</p>
                 <p style="font-size: 0.9em; color: var(--SmartThemeQuoteColor);">
                     选择"是"将保留已处理的数据并创建部分完成的任务。<br>
