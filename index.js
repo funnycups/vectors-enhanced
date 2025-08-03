@@ -137,7 +137,7 @@ const settings = {
   rerank_top_n: 20,
   rerank_hybrid_alpha: 0.7, // Rerank score weight
   rerank_success_notify: true, // 是否显示Rerank成功通知
-  
+
   // Experimental settings
   query_instruction_enabled: false, // Enable query instruction
   query_instruction_template: 'Given a query, retrieve relevant passages from the context. Consider all available metadata including floor (chronological position), world info entries, and chapter/section markers to ensure comprehensive retrieval.', // Query instruction template
@@ -158,7 +158,7 @@ const settings = {
   depth: 2,
   depth_role: extension_prompt_roles.SYSTEM,
   include_wi: false,
-  
+
   // Template presets
   template_presets: {
     default: [
@@ -440,16 +440,16 @@ async function renameVectorTask(chatId, taskId, currentName) {
         taskIndex,
         task: tasks[taskIndex]
       });
-      
+
       tasks[taskIndex].name = newName.trim();
       tasks[taskIndex].isCustomName = true; // 标记为用户自定义名称
       settings.vector_tasks[chatId] = tasks;
-      
+
       // 确保 extension_settings.vectors_enhanced 存在
       if (!extension_settings.vectors_enhanced) {
         extension_settings.vectors_enhanced = {};
       }
-      
+
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
 
@@ -564,14 +564,14 @@ async function getRawContentForScanning() {
       try {
         const text = await getFileAttachment(file.url);
         if (text && text.trim()) {
-          items.push({ 
-            type: 'file', 
-            text: text, 
-            metadata: { 
+          items.push({
+            type: 'file',
+            text: text,
+            metadata: {
               name: file.name,
               originalIndex: fileIndex  // 添加原始索引
-            }, 
-            selected: true 
+            },
+            selected: true
           });
           fileIndex++;  // 递增文件索引
         }
@@ -1422,9 +1422,9 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         if (dispatchResult.success && dispatchResult.vectors) {
           const chunks = dispatchResult.vectors.map((vector, idx) => {
             const rawText = vector.text || vector.content;
-            
+
             let originalIndex;
-            
+
             // Special handling for file type - extract originalIndex from the content
             if (contentBlock.type === 'file' && rawText.includes('originalIndex=')) {
               // Extract originalIndex from file META tag
@@ -1437,15 +1437,15 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
               }
             } else {
               // For other types (chat, world_info), use metadata
-              originalIndex = vector.metadata?.originalIndex ?? 
-                            contentBlock.metadata?.originalIndex ?? 
-                            contentBlock.metadata?.index ?? 
+              originalIndex = vector.metadata?.originalIndex ??
+                            contentBlock.metadata?.originalIndex ??
+                            contentBlock.metadata?.index ??
                             idx;
             }
-            
+
             const metadataPrefix = `[META:type=${contentBlock.type},originalIndex=${originalIndex}]`;
             const encodedText = `${metadataPrefix}${rawText}`;
-            
+
             return {
               hash: getHashValue(encodedText),
               text: encodedText,
@@ -1496,7 +1496,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorsInserted = true;
         // 更新已处理的块数
         processedChunksCount = Math.min(i + batch.length, allProcessedChunks.length);
-        
+
         // 追踪最后成功保存的 chunk
         if (batch.length > 0) {
           lastSavedChunk = batch[batch.length - 1];
@@ -1622,143 +1622,75 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         hideProgressNew();
       }
 
-      // Handle abort
-      if (error.message === '向量化被用户中断' || vectorizationAbortController.signal.aborted) {
-        if (vectorsInserted) {
-          // 提取最后保存块的metadata信息
-          let lastChunkInfo = '';
-          if (lastSavedChunk && lastSavedChunk.text) {
+      const isAbort = error.name === 'AbortError' || error.message.includes('用户中断');
+
+      if (vectorsInserted) {
+        // Common logic for when some chunks have been inserted
+        let lastChunkInfo = '';
+        if (lastSavedChunk && lastSavedChunk.text) {
             const decoded = decodeMetadataFromText(lastSavedChunk.text);
             if (decoded.metadata) {
-              const meta = decoded.metadata;
-              let infoText = '';
-              
-              // 根据类型显示不同的信息
-              if (meta.type === 'chat') {
-                infoText = `聊天消息 #${meta.originalIndex || '未知'}`;
-              } else if (meta.type === 'file') {
-                infoText = `文件块 (索引: ${meta.originalIndex || '未知'})`;
-              } else if (meta.type === 'world_info') {
-                if (meta.entry) {
-                  infoText = `世界信息: ${meta.entry}`;
-                  if (meta.chunk) {
-                    infoText += ` (${meta.chunk})`;
-                  }
-                } else {
-                  infoText = `世界信息块 (索引: ${meta.originalIndex || '未知'})`;
-                }
-              } else {
-                infoText = `${meta.type || '未知类型'} (索引: ${meta.originalIndex || '未知'})`;
-              }
-              
-              // 显示前120个字符
-              const textPreview = lastSavedChunk.text ? 
-                lastSavedChunk.text.substring(0, 120) + (lastSavedChunk.text.length > 120 ? '...' : '') : 
-                '(无内容)';
-              
-              lastChunkInfo = `
-                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;">
-                    <p style="margin: 0 0 5px 0;"><strong>最后保存的块：</strong></p>
-                    <p style="margin: 0 0 3px 0; font-size: 0.9em;">类型：${infoText}</p>
-                    <p style="margin: 0; font-size: 0.9em; color: var(--SmartThemeQuoteColor);">内容预览：${textPreview}</p>
-                </div>`;
+                const meta = decoded.metadata;
+                let infoText = '';
+                if (meta.type === 'chat') infoText = `聊天消息 #${meta.originalIndex || '未知'}`;
+                else if (meta.type === 'file') infoText = `文件块 (索引: ${meta.originalIndex || '未知'})`;
+                else if (meta.type === 'world_info') infoText = `世界信息: ${meta.entry || `块 (索引: ${meta.originalIndex || '未知'})`}`;
+                else infoText = `${meta.type || '未知类型'} (索引: ${meta.originalIndex || '未知'})`;
+                const textPreview = lastSavedChunk.text ? lastSavedChunk.text.substring(0, 120) + (lastSavedChunk.text.length > 120 ? '...' : '') : '(无内容)';
+                lastChunkInfo = `<div style="margin-top: 15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;"><p style="margin: 0 0 5px 0;"><strong>最后保存的块：</strong></p><p style="margin: 0 0 3px 0; font-size: 0.9em;">类型：${infoText}</p><p style="margin: 0; font-size: 0.9em; color: var(--SmartThemeQuoteColor);">内容预览：${textPreview}</p></div>`;
             }
-          }
-          
-          // 显示确认对话框
-          const confirm = await callGenericPopup(
-            `<div>
-                <p><strong>向量化已中断</strong></p>
-                <div style="text-align: left; margin: 15px 0;">
-                    <p>处理进度：</p>
-                    <ul style="margin: 5px 0 15px 20px;">
-                        <li>已处理块数：${processedChunksCount} / ${allProcessedChunks.length}</li>
-                        <li>原始项目数：${totalItemsCount}</li>
-                        <li>完成度：${Math.round((processedChunksCount / allProcessedChunks.length) * 100)}%</li>
-                    </ul>
-                </div>
-                ${lastChunkInfo}
-                <p style="margin-top: 15px;">是否保存已处理的内容？</p>
-                <p style="font-size: 0.9em; color: var(--SmartThemeQuoteColor);">
-                    选择"是"将保留已处理的数据并创建部分完成的任务。<br>
-                    选择"否"将清理所有已处理的数据。
-                </p>
-            </div>`,
+        }
+
+        const title = isAbort ? '向量化已中断' : '向量化过程中发生错误';
+        const errorDetails = isAbort ? '' : `<p style="font-size: 0.9em; color: var(--SmartThemeQuoteColor); word-break: break-all; margin-top: 10px;">错误: ${error.message}</p>`;
+
+        const confirm = await callGenericPopup(
+            `<div><p><strong>${title}</strong></p>${errorDetails}<div style="text-align: left; margin: 15px 0;"><p>处理进度：</p><ul style="margin: 5px 0 15px 20px;"><li>已处理块数：${processedChunksCount} / ${allProcessedChunks.length}</li><li>原始项目数：${totalItemsCount}</li><li>完成度：${Math.round((processedChunksCount / allProcessedChunks.length) * 100)}%</li></ul></div>${lastChunkInfo}<p style="margin-top: 15px;">是否保存已处理的内容？</p><p style="font-size: 0.9em; color: var(--SmartThemeQuoteColor);">选择"是"将保留已处理的数据并创建部分完成的任务。<br>选择"否"将清理所有已处理的数据。</p></div>`,
             POPUP_TYPE.CONFIRM,
             { okButton: '是，保存', cancelButton: '否，清理' }
-          );
+        );
 
-          if (confirm === POPUP_RESULT.AFFIRMATIVE) {
-            // 用户选择保存 - 创建部分完成的任务
-            
-            // 只保留已处理的部分
+        if (confirm === POPUP_RESULT.AFFIRMATIVE) {
             const processedChunks = allProcessedChunks.slice(0, processedChunksCount);
-            
-            // 创建任务对象
             const task = {
-              taskId: taskId,
-              name: taskName + ' (部分完成)',
-              timestamp: Date.now(),
-              settings: correctedSettings,
-              enabled: true,
-              itemCount: processedChunks.length,
-              originalItemCount: items.length,
-              isIncremental: isIncremental,
-              isPartial: true,  // 标记为部分完成
-              completionRate: Math.round((processedChunksCount / allProcessedChunks.length) * 100),
-              actualProcessedItems: actualProcessedItems,
-              version: '2.0'
+                taskId: taskId,
+                name: taskName + ' (部分完成)',
+                timestamp: Date.now(),
+                settings: correctedSettings,
+                enabled: true,
+                itemCount: processedChunks.length,
+                originalItemCount: items.length,
+                isIncremental: isIncremental,
+                isPartial: true,
+                completionRate: Math.round((processedChunksCount / allProcessedChunks.length) * 100),
+                actualProcessedItems: actualProcessedItems,
+                version: '2.0'
             };
-
-            // 添加任务到列表
             addVectorTask(chatId, task);
-
-            // 更新缓存
             cachedVectors.set(collectionId, {
-              timestamp: Date.now(),
-              hashes: processedChunks.map(chunk => chunk.hash),
-              itemCount: processedChunks.length,
-              settings: JSON.parse(JSON.stringify(settings)),
-              isPartial: true
+                timestamp: Date.now(),
+                hashes: processedChunks.map(chunk => chunk.hash),
+                itemCount: processedChunks.length,
+                settings: JSON.parse(JSON.stringify(settings)),
+                isPartial: true
             });
-
-            toastr.info(`向量化已中断，已保存 ${processedChunksCount} 个块的数据`, '部分保存');
-            
-            // 刷新任务列表
+            toastr.info(`向量化失败，但已保存 ${processedChunksCount} 个块的数据`, '部分保存');
             await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
-            
-            return {
-              success: false,
-              aborted: true,
-              partial: true,
-              savedCount: processedChunksCount,
-              error: '用户中断操作（已保存部分数据）'
-            };
-          } else {
-            // 用户选择清理
-            await storageAdapter.purgeVectorIndex(collectionId);
-            toastr.info('向量化已中断，已清理部分数据', '中断');
-            return {
-              success: false,
-              aborted: true,
-              error: '用户中断操作'
-            };
-          }
+            return { success: false, aborted: isAbort, partial: true, savedCount: processedChunksCount, error: `操作失败（已保存部分数据）: ${error.message}` };
         } else {
-          // 还没有插入任何数据
-          toastr.info('向量化已中断', '中断');
-          return {
-            success: false,
-            aborted: true,
-            error: '用户中断操作'
-          };
+            await storageAdapter.purgeVectorIndex(collectionId);
+            toastr.info(`${title}，已清理部分数据`, isAbort ? '中断' : '错误');
+            return { success: false, aborted: isAbort, error: isAbort ? '用户中断操作' : error.message };
         }
       } else {
-        if (vectorsInserted) {
-          await storageAdapter.purgeVectorIndex(collectionId);
+        // Logic for when no chunks have been inserted
+        if (isAbort) {
+            toastr.info('向量化已中断', '中断');
+            return { success: false, aborted: true, error: '用户中断操作' };
+        } else {
+            toastr.error(`向量化失败: ${error.message}`, '错误');
+            throw error; // Re-throw only for non-abort errors that happened early
         }
-        toastr.error('向量化内容失败', '错误');
-        throw error; // 只有真正的错误才抛出
       }
 
     } finally {
@@ -1767,14 +1699,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       vectorizationAbortController = null;
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
-      
+
       // 清除文件选择状态，避免中断后再次向量化时使用旧的文件选择
       if (settings.selected_content.files && settings.selected_content.files.selected) {
         console.log('Vectors: Clearing file selection after vectorization completion/abort');
         settings.selected_content.files.selected = [];
         Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
-        
+
         // 立即更新UI以反映清理后的状态
         if (typeof updateFileList === 'function') {
           await updateFileList();
@@ -1791,14 +1723,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     vectorizationAbortController = null;
     $('#vectors_enhanced_vectorize').show();
     $('#vectors_enhanced_abort').hide();
-    
+
     // 清除文件选择状态，避免中断后再次向量化时使用旧的文件选择
     if (settings.selected_content.files && settings.selected_content.files.selected) {
       console.log('Vectors: Clearing file selection after vectorization error');
       settings.selected_content.files.selected = [];
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-      
+
       // 立即更新UI以反映清理后的状态
       if (typeof updateFileList === 'function') {
         await updateFileList();
@@ -2151,11 +2083,11 @@ async function vectorizeContent() {
                 if (!worldGroups[worldName]) worldGroups[worldName] = [];
                 worldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
             });
-            
-            const worldDetails = Object.entries(worldGroups).map(([world, entries]) => 
+
+            const worldDetails = Object.entries(worldGroups).map(([world, entries]) =>
                 `${world} (${entries.length}条)`
             ).join(', ');
-            
+
             processedParts.push(`世界信息: ${worldDetails}`);
         }
 
@@ -2202,11 +2134,11 @@ async function vectorizeContent() {
                 if (!newWorldGroups[worldName]) newWorldGroups[worldName] = [];
                 newWorldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
             });
-            
-            const newWorldDetails = Object.entries(newWorldGroups).map(([world, entries]) => 
+
+            const newWorldDetails = Object.entries(newWorldGroups).map(([world, entries]) =>
                 `${world} (${entries.length}条)`
             ).join(', ');
-            
+
             newParts.push(`新增世界信息: ${newWorldDetails}`);
         }
 
@@ -2220,11 +2152,11 @@ async function vectorizeContent() {
                 if (!processedWorldGroups[worldName]) processedWorldGroups[worldName] = [];
                 processedWorldGroups[worldName].push(item.metadata.comment || item.metadata.uid);
             });
-            
-            const processedWorldDetails = Object.entries(processedWorldGroups).map(([world, entries]) => 
+
+            const processedWorldDetails = Object.entries(processedWorldGroups).map(([world, entries]) =>
                 `${world} (${entries.length}条)`
             ).join(', ');
-            
+
             processedParts.push(`已处理世界信息: ${processedWorldDetails}`);
         }
 
@@ -2412,16 +2344,16 @@ function decodeMetadataFromText(encodedText) {
   if (!encodedText) {
     return { text: encodedText, metadata: {} };
   }
-  
+
   const metaMatch = encodedText.match(/^\[META:([^\]]+)\]/);
   if (!metaMatch) {
     return { text: encodedText, metadata: {} };
   }
-  
+
   const metaString = metaMatch[1];
   const text = encodedText.substring(metaMatch[0].length);
   const metadata = {};
-  
+
   // Parse metadata key-value pairs
   const pairs = metaString.split(',');
   for (const pair of pairs) {
@@ -2434,7 +2366,7 @@ function decodeMetadataFromText(encodedText) {
       }
     }
   }
-  
+
   return { text, metadata };
 }
 
@@ -2534,7 +2466,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       logTimingAndReturn('查询文本为空');
       return;
     }
-    
+
     // 实验性功能：添加查询指令
     if (settings.query_instruction_enabled && settings.query_instruction_template) {
       queryText = `Instruct: ${settings.query_instruction_template}\nQuery:${queryText}`;
@@ -2611,7 +2543,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 } else if (results.similarities && results.similarities[index] !== undefined) {
                   score = results.similarities[index];
                 }
-                
+
                 allResults.push({
                   text: meta.text,
                   score: score,
@@ -2644,7 +2576,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 } else if (results.similarities && results.similarities[index] !== undefined) {
                   score = results.similarities[index];
                 }
-                
+
                 allResults.push({
                   text: item.text,
                   score: score,
@@ -2696,7 +2628,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     // 保存原始查询结果数量（用于通知显示）
     const originalQueryCount = allResults.length;
-    
+
     // 保存重排前的结果（深拷贝）
     const resultsBeforeRerank = allResults.map(r => ({
         text: r.text,
@@ -2763,33 +2695,33 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           // First, sort by taskId to keep same task content together
           const aTaskId = a.metadata?.taskId || '';
           const bTaskId = b.metadata?.taskId || '';
-          
+
           if (aTaskId !== bTaskId) {
             // Different tasks - sort by taskId to keep them separate
             return aTaskId.localeCompare(bTaskId);
           }
-          
+
           // Same task - now sort by originalIndex within the task
           // First try to decode originalIndex from text
           const aDecoded = decodeMetadataFromText(a.text);
           const bDecoded = decodeMetadataFromText(b.text);
-          
+
           // Get originalIndex from decoded metadata or fallback to metadata.index
           const aIndex = aDecoded.metadata.originalIndex ?? a.metadata?.originalIndex ?? a.metadata?.index ?? 0;
           const bIndex = bDecoded.metadata.originalIndex ?? b.metadata?.originalIndex ?? b.metadata?.index ?? 0;
-          
+
           // 对于世界书类型的特殊处理
           if (type === 'world_info') {
             // 提取条目标识符和分块信息
             const aEntry = aDecoded.metadata.entry || '';
             const bEntry = bDecoded.metadata.entry || '';
-            
+
             // 提取分块编号 (从 "chunk=1/3" 格式中提取)
             const aChunkMatch = a.text.match(/chunk=(\d+)\/\d+/);
             const bChunkMatch = b.text.match(/chunk=(\d+)\/\d+/);
             const aChunkNum = aChunkMatch ? parseInt(aChunkMatch[1]) : 0;
             const bChunkNum = bChunkMatch ? parseInt(bChunkMatch[1]) : 0;
-            
+
             // 如果是同一个条目的不同分块
             if (aEntry === bEntry && aEntry !== '') {
               // 同一条目内按chunk编号升序
@@ -2803,7 +2735,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
             return aIndex - bIndex;
           }
         });
-        
+
         console.debug(`Vectors: Sorted ${type} results by taskId and originalIndex`);
       });
 
@@ -2880,10 +2812,10 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           originalQueryCount: originalQueryCount,
           finalCount: topResults.length
         };
-        
+
         // 收集最终排序后的结果（按照originalIndex排序后）
         const finalSortedResults = [];
-        
+
         // 按照注入顺序收集结果：world_info -> file -> chat
         if (groupedResults.world_info) {
           finalSortedResults.push(...groupedResults.world_info);
@@ -2897,7 +2829,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         if (groupedResults.unknown) {
           finalSortedResults.push(...groupedResults.unknown);
         }
-        
+
         // 保存详细的查询信息
         lastQueryDetails = {
           queryText: queryText,
@@ -2919,7 +2851,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         console.debug('Vectors: No relevant texts found after formatting');
         // 清空之前可能设置的内容
         setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi, settings.depth_role);
-        
+
         // 也清空保存的内容
         lastInjectedContent = null;
         lastInjectedStats = null;
@@ -3248,7 +3180,7 @@ jQuery(async () => {
   if (settings.rerank_success_notify === undefined) {
     settings.rerank_success_notify = true;
   }
-  
+
   // 确保实验性功能设置存在
   if (settings.query_instruction_enabled === undefined) {
     settings.query_instruction_enabled = false;
@@ -3307,12 +3239,12 @@ jQuery(async () => {
         existingCustom[1] || { id: 'custom2', name: '自定义模板2', template: '', description: '用户自定义模板' },
         existingCustom[2] || { id: 'custom3', name: '自定义模板3', template: '', description: '用户自定义模板' }
       ];
-      
+
       // 确保ID正确
       newCustom[0].id = 'custom1';
       newCustom[1].id = 'custom2';
       newCustom[2].id = 'custom3';
-      
+
       settings.template_presets.custom = newCustom;
     }
   }
@@ -3481,7 +3413,7 @@ jQuery(async () => {
   rerankService = new RerankService(settings, {
     toastr: toastr
   });
-  
+
   // 暴露到全局以便测试（仅在开发环境）
   if (window.location.hostname === 'localhost' || window.location.search.includes('debug=true')) {
     window.rerankService = rerankService;
@@ -3939,7 +3871,7 @@ jQuery(async () => {
         toastr.success(`成功创建导入任务`);
         // 刷新任务列表
         await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
-        
+
         // 显示存储路径弹窗
         showImportTaskStoragePath(chatId, result.taskId, customTaskName);
       }
@@ -3959,13 +3891,13 @@ jQuery(async () => {
     // Get current vector source and model
     const vectorSource = settings?.source || 'unknown';
     const vectorModel = getVectorModel();
-    
+
     // Construct the full path
     const dataRoot = 'sillytavern/data/default-user';
     const collectionId = `${chatId}_${taskId}`;
     const relativePath = `vectors/${vectorSource}/${collectionId}/${vectorModel || 'default'}/`;
     const fullPath = `${dataRoot}/${relativePath}`;
-    
+
     // Create modal HTML
     const modalHtml = `
       <div class="vector-storage-modal-overlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
@@ -3976,22 +3908,22 @@ jQuery(async () => {
               <i class="fa-solid fa-times"></i>
             </button>
           </div>
-          
+
           <div style="margin-bottom: 1rem;">
             <strong>任务名称:</strong> ${taskName}
           </div>
-          
+
           <div style="margin-bottom: 1rem;">请将您获取的向量化文件粘贴至下列路径并覆盖：</div>
           <div style="padding: 0.75rem; background: rgba(0,0,0,0.3); border-radius: 4px; font-size: 0.9em; font-family: monospace; word-break: break-all;">
             ${fullPath}
           </div>
-          
+
           <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--SmartThemeBorderColor);">
             <small style="color: var(--SmartThemeQuoteColor);">
               请您确保使用与分享方相同的向量化模型。
             </small>
           </div>
-          
+
           <div class="flex-container" style="justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
             <button class="menu_button" id="copy-import-path" style="width: auto; min-width: fit-content;">
               <i class="fa-solid fa-copy"></i> 复制路径
@@ -4003,29 +3935,29 @@ jQuery(async () => {
         </div>
       </div>
     `;
-    
+
     // Remove any existing modal
     $('.vector-storage-modal-overlay').remove();
-    
+
     // Add modal to body
     const $modal = $(modalHtml);
     $('body').append($modal);
-    
+
     // Bind events
     $modal.on('click', function(e) {
       if (e.target === e.currentTarget) {
         $modal.remove();
       }
     });
-    
+
     $modal.find('#close-import-modal, #confirm-import-modal').on('click', function() {
       $modal.remove();
     });
-    
+
     $modal.find('#copy-import-path').on('click', function() {
       const $button = $(this);
       const originalHtml = $button.html();
-      
+
       // Copy to clipboard
       navigator.clipboard.writeText(fullPath).then(() => {
         $button.html('<i class="fa-solid fa-check"></i> 已复制');
