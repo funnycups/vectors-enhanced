@@ -3726,6 +3726,212 @@ jQuery(async () => {
     }
   });
 
+  // 添加生成空白任务按钮的事件处理器
+  $(document).on('click', '#vectors_enhanced_generate_blank_task', async (e) => {
+    e.preventDefault();
+    console.log('生成空白任务按钮被点击');
+
+    const chatId = getCurrentChatId();
+    if (!chatId || chatId === 'null' || chatId === 'undefined') {
+      toastr.error('未选择聊天');
+      return;
+    }
+
+    if (isVectorizing) {
+      toastr.warning('已有向量化任务在进行中');
+      return;
+    }
+
+    try {
+      // 创建一个包含占位文本的内容项
+      // 使用 file 类型，防止与其他向量化任务冲突
+      const blankItem = {
+        type: 'file',
+        identifier: `import_${Date.now()}`,
+        text: '[导入任务占位内容]', // 使用占位文本而不是空白，确保不被过滤
+        metadata: {
+          url: `import_placeholder_${Date.now()}.txt`,
+          name: '导入占位文件',
+          size: 1,
+          timestamp: new Date().toISOString(),
+          source: 'import_task'
+        }
+      };
+
+      // 使用固定的任务名称
+      const customTaskName = '导入任务';
+
+      // 创建一个临时的 content settings，只启用 files
+      const blankContentSettings = {
+        chat: {
+          enabled: false,
+          range: { start: 0, end: -1 },
+          user: true,
+          assistant: true,
+          include_hidden: false
+        },
+        files: {
+          enabled: true,
+          selected: [blankItem.metadata.url]
+        },
+        world_info: {
+          enabled: false,
+          selected: {}
+        },
+        tag_rules: [],
+        content_blacklist: ''
+      };
+
+      // 直接执行向量化
+      const result = await performVectorization(
+        blankContentSettings,
+        chatId,
+        false, // 不是增量
+        [blankItem], // 只包含空白项
+        {
+          taskType: 'import_task',
+          customTaskName: customTaskName,
+          skipDeduplication: true // 跳过去重检查
+        }
+      );
+
+      if (result?.success) {
+        toastr.success(`成功创建导入任务`);
+        // 刷新任务列表
+        await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+        
+        // 显示存储路径弹窗
+        showImportTaskStoragePath(chatId, result.taskId, customTaskName);
+      }
+    } catch (error) {
+      console.error('创建导入任务失败:', error);
+      toastr.error('创建导入任务失败: ' + error.message);
+    }
+  });
+
+  /**
+   * Show storage path for import task
+   * @param {string} chatId - Chat ID
+   * @param {string} taskId - Task ID
+   * @param {string} taskName - Task name
+   */
+  function showImportTaskStoragePath(chatId, taskId, taskName) {
+    // Get current vector source and model
+    const vectorSource = settings?.source || 'unknown';
+    const vectorModel = getVectorModel();
+    
+    // Construct the full path
+    const dataRoot = 'sillytavern/data/default-user';
+    const collectionId = `${chatId}_${taskId}`;
+    const relativePath = `vectors/${vectorSource}/${collectionId}/${vectorModel || 'default'}/`;
+    const fullPath = `${dataRoot}/${relativePath}`;
+    
+    // Create modal HTML
+    const modalHtml = `
+      <div class="vector-storage-modal-overlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+        <div class="vector-storage-modal" style="background: var(--SmartThemeBlurTintColor); border-radius: 8px; padding: 20px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+          <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="margin: 0;">导入任务存储地址</h3>
+            <button class="menu_button" id="close-import-modal" style="padding: 5px 10px;">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <strong>任务名称:</strong> ${taskName}
+          </div>
+          
+          <div style="margin-bottom: 1rem;">请将您获取的向量化文件粘贴至下列路径并覆盖：</div>
+          <div style="padding: 0.75rem; background: rgba(0,0,0,0.3); border-radius: 4px; font-size: 0.9em; font-family: monospace; word-break: break-all;">
+            ${fullPath}
+          </div>
+          
+          <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--SmartThemeBorderColor);">
+            <small style="color: var(--SmartThemeQuoteColor);">
+              请您确保使用与分享方相同的向量化模型。
+            </small>
+          </div>
+          
+          <div class="flex-container" style="justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
+            <button class="menu_button" id="copy-import-path" style="width: auto; min-width: fit-content;">
+              <i class="fa-solid fa-copy"></i> 复制路径
+            </button>
+            <button class="menu_button" id="confirm-import-modal" style="width: auto; min-width: fit-content;">
+              <i class="fa-solid fa-check"></i> 确定
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Remove any existing modal
+    $('.vector-storage-modal-overlay').remove();
+    
+    // Add modal to body
+    const $modal = $(modalHtml);
+    $('body').append($modal);
+    
+    // Bind events
+    $modal.on('click', function(e) {
+      if (e.target === e.currentTarget) {
+        $modal.remove();
+      }
+    });
+    
+    $modal.find('#close-import-modal, #confirm-import-modal').on('click', function() {
+      $modal.remove();
+    });
+    
+    $modal.find('#copy-import-path').on('click', function() {
+      const $button = $(this);
+      const originalHtml = $button.html();
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(fullPath).then(() => {
+        $button.html('<i class="fa-solid fa-check"></i> 已复制');
+        setTimeout(() => {
+          $button.html(originalHtml);
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy path:', err);
+        toastr.error('复制失败');
+      });
+    });
+  }
+
+  /**
+   * Get vector model based on current settings
+   * @returns {string} Model name or empty string
+   */
+  function getVectorModel() {
+    const source = settings?.source;
+    if (!source) return '';
+
+    // Different sources have different model settings
+    switch (source) {
+      case 'openai':
+      case 'mistral':
+      case 'togetherai':
+        return settings?.openai_model || '';
+      case 'cohere':
+        return settings?.cohere_model || '';
+      case 'ollama':
+        return settings?.ollama_model || '';
+      case 'llamacpp':
+        return settings?.llamacpp_model || '';
+      case 'vllm':
+        return settings?.vllm_model || '';
+      case 'voyageai':
+        return settings?.voyageai_model || '';
+      case 'gemini':
+        return settings?.google_model || '';
+      case 'google':
+        return settings?.google_model || '';
+      default:
+        return '';
+    }
+  }
+
   // Register slash commands
   SlashCommandParser.addCommandObject(
     SlashCommand.fromProps({
