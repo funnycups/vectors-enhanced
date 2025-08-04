@@ -22,9 +22,6 @@ export class VectorizationAdapter {
         this.textgenerationwebui_settings = dependencies.textgenerationwebui_settings;
         this.textgen_types = dependencies.textgen_types;
         
-        // Plugin manager support (optional)
-        this.pluginManager = dependencies.pluginManager || null;
-        
         logger.log('VectorizationAdapter initialized');
     }
 
@@ -38,49 +35,11 @@ export class VectorizationAdapter {
         const source = this.settings.source;
         logger.log(`Vectorizing ${items.length} items using source: ${source}`);
 
-        // Check if we should use plugin manager
-        if (this.pluginManager && this.settings.use_plugin_system) {
-            return await this.vectorizeWithPlugin(items, signal);
-        }
-
         // Use SillyTavern's existing vectorization system via /api/vector/insert
         // This delegates to the server which handles all vectorization internally
         return await this.vectorizeViaSillyTavernAPI(items, signal);
     }
 
-    /**
-     * 使用插件系统进行向量化
-     * @private
-     */
-    async vectorizeWithPlugin(items, signal) {
-        logger.log('Using plugin system for vectorization');
-        
-        // Convert items to texts array for plugin API
-        const texts = items.map(item => item.text);
-        
-        try {
-            // Use plugin manager to vectorize
-            const embeddings = await this.pluginManager.vectorize(texts, {
-                signal: signal,
-                onProgress: (progress) => {
-                    logger.log(`Plugin vectorization progress: ${progress.percentage}%`);
-                }
-            });
-            
-            // Convert back to expected format
-            const results = items.map((item, index) => ({
-                index: item.index,
-                embedding: embeddings[index]
-            }));
-            
-            logger.log(`Plugin vectorization completed for ${items.length} items`);
-            return results;
-            
-        } catch (error) {
-            logger.error('Plugin vectorization failed:', error);
-            throw error;
-        }
-    }
 
     /**
      * 使用 SillyTavern 原生架构进行向量化
