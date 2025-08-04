@@ -2978,8 +2978,8 @@ function getVectorsRequestBody(args = {}) {
     case 'vllm':
       body.apiUrl = settings.vllm_url || textgenerationwebui_settings.server_urls[textgen_types.VLLM];
       body.model = settings.vllm_model;
-      // 优先使用文本生成API的设置，如果没有则使用向量设置的API key
-      body.apiKey = textgenerationwebui_settings.api_key_vllm || settings.vllm_api_key || '';
+      // 优先使用插件设置的API key，如果为空则使用文本生成API的设置
+      body.apiKey = settings.vllm_api_key || textgenerationwebui_settings.api_key_vllm || '';
       break;
     case 'ollama':
       body.model = settings.ollama_model;
