@@ -79,8 +79,8 @@ export class VectorStoragePathUI {
 
             // Create modal HTML
             const modalHtml = `
-                <div class="vector-storage-modal-overlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
-                    <div class="vector-storage-modal" style="background: var(--SmartThemeBlurTintColor); border-radius: 8px; padding: 20px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <div class="vector-storage-modal-overlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
+                    <div class="vector-storage-modal" style="background: var(--SmartThemeBlurTintColor); border-radius: 8px; padding: 20px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.3); margin: auto; position: relative;">
                         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <h3 style="margin: 0;">查询向量存储地址</h3>
                             <button class="menu_button" id="close-modal" style="padding: 5px 10px;">
