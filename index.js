@@ -326,17 +326,51 @@ async function autoVectorizeRecentChat(chat) {
     const candidates = [];
     // 选区限制（range/newRanges) 与 getVectorizableContent 行为保持一致
     const chatSel = settings.selected_content.chat;
+    // 解析支持负数（相对末尾）范围：-1 仍表示无限/直到末尾；其它负数按 chat.length + value 计算
+    const resolveIndex = (raw, isEnd) => {
+      if (raw === undefined || raw === null) return isEnd ? chat.length - 1 : 0;
+      if (raw === -1 && isEnd) return chat.length - 1; // end -1 => last element
+      if (raw < 0) {
+        const v = chat.length + raw; // e.g. -4 with length 26 => 22
+        return Math.max(0, Math.min(chat.length - 1, v));
+      }
+      return raw;
+    };
+
+    let resolvedRanges = [];
     const inExplicitRange = (idx) => {
       if (chatSel.newRanges && Array.isArray(chatSel.newRanges) && chatSel.newRanges.length > 0) {
-        return chatSel.newRanges.some(r => idx >= r.start && (r.end === -1 || idx <= r.end));
+        if (resolvedRanges.length === 0) {
+          resolvedRanges = chatSel.newRanges.map(r => ({
+            start: resolveIndex(r.start, false),
+            end: r.end === -1 ? chat.length - 1 : resolveIndex(r.end, true)
+          }));
+        }
+        return resolvedRanges.some(r => idx >= r.start && idx <= r.end);
       }
       if (chatSel.range) {
-        const rs = chatSel.range.start || 0;
-        const re = chatSel.range.end === -1 ? Infinity : chatSel.range.end;
-        return idx >= rs && idx <= re;
+        if (resolvedRanges.length === 0) {
+          const rs = resolveIndex(chatSel.range.start, false);
+          const re = chatSel.range.end === -1 ? chat.length - 1 : resolveIndex(chatSel.range.end, true);
+          resolvedRanges.push({ start: rs, end: re });
+        }
+        const r = resolvedRanges[0];
+        return idx >= r.start && idx <= r.end;
       }
       return true;
     };
+    if (dbg) {
+      // 预先解析一次以便日志
+      if (chatSel.newRanges && Array.isArray(chatSel.newRanges) && chatSel.newRanges.length > 0) {
+        inExplicitRange(-1); // 触发解析
+        console.log('[AutoPreRAG][range] resolved newRanges', resolvedRanges);
+      } else if (chatSel.range) {
+        inExplicitRange(-1);
+        console.log('[AutoPreRAG][range] resolved single range', resolvedRanges[0]);
+      } else {
+        console.log('[AutoPreRAG][range] no explicit range (all allowed)');
+      }
+    }
 
     for (let i = startIndex; i <= endIndex; i++) {
       const msg = chat[i];
