@@ -334,9 +334,7 @@ async function autoVectorizeRecentChat(chat) {
     // 参考 selected_content.chat.types 过滤类型
     const typeFilter = settings.selected_content.chat.types || { user: true, assistant: true };
 
-    // 收集候选
     const candidates = [];
-    // 选区限制（range/newRanges) 与 getVectorizableContent 行为保持一致
     const chatSel = settings.selected_content.chat;
     // 解析支持负数（相对末尾）范围：-1 仍表示无限/直到末尾；其它负数按 chat.length + value 计算
     const resolveIndex = (raw, isEnd) => {
@@ -387,16 +385,21 @@ async function autoVectorizeRecentChat(chat) {
     // 过滤原因计数
     const filterCounters = { system:0, type:0, range:0, processed:0, empty:0, other:0 };
 
-    for (let i = startIndex; i <= endIndex; i++) {
-      const msg = chat[i];
-      if (!msg) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty msg'); filterCounters.other++; continue; }
-      if (msg.is_system) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: system'); filterCounters.system++; continue; }
-  const isUser = msg.is_user === true;
-      if ((isUser && !typeFilter.user) || (!isUser && !typeFilter.assistant)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: type filtered', {isUser, types: typeFilter}); filterCounters.type++; continue; }
-      if (!inExplicitRange(i)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: out of explicit range'); filterCounters.range++; continue; }
+    // 与标准路径一致：使用 getMessages 进行预过滤（含 substituteParams 与隐藏/类型过滤）
+    const gmOptions = {
+      includeHidden: chatSel.include_hidden || false,
+      types: typeFilter,
+      range: chatSel.range,
+      newRanges: chatSel.newRanges
+    };
+    const allPreFiltered = getMessages(chat, gmOptions); // 与 getVectorizableContent 相同入口
+
+    for (const m of allPreFiltered) {
+      const i = m.index;
+      if (i < startIndex || i > endIndex) continue; // 限制最近窗口
       if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: already processed'); filterCounters.processed++; continue; }
-      if (!msg.mes || !msg.mes.trim()) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty text'); filterCounters.empty++; continue; }
-      candidates.push({ index: i, msg });
+      if (!m.text || !m.text.trim()) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty text (post-getMessages)'); filterCounters.empty++; continue; }
+      candidates.push({ index: i, msg: m });
     }
 
     if (candidates.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] no candidates (after filters)', {filterCounters}); return; }
@@ -409,19 +412,15 @@ async function autoVectorizeRecentChat(chat) {
     const toTake = candidates.slice(0, maxNew);
 
     // 构造最小向量化项（复用 createVectorItem 所需结构）
+    const rules = chatSel.tag_rules || [];
     const vectorItems = toTake.map(({ index, msg }) => {
-      return {
-        type: 'chat',
-        text: substituteParams(msg.mes),
-        rawText: substituteParams(msg.mes),
-        metadata: {
-          index,
-          is_user: msg.is_user === true,
-          name: msg.name,
-          is_hidden: msg.is_system === true
-        },
-        selected: true
-      };
+      let extractedText;
+      if (msg.index === 0 || msg.is_user === true) {
+        extractedText = msg.text; // 首楼或用户楼层：不做标签提取
+      } else {
+        extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
+      }
+      return createVectorItem(msg, extractedText, extractedText);
     });
 
     if (vectorItems.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] vectorItems empty'); return; }
