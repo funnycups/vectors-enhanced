@@ -293,7 +293,8 @@ if (!settings.auto_pre_rag_vectorize) {
     max_new: 8,              // 单次最多补向量化的消息数
     skip_if_vectorizing: true, // 若已有向量化进行中则跳过
     user_only_first: false,  // 若为 true 只优先补用户消息
-    debug: true              // 调试：打印详细早退原因与统计
+  debug: true,             // 调试：打印详细早退原因与统计
+  debug_ignore_processed: false // 调试：忽略 processedSet（用于确认是否是判定错误）
   };
 }
 
@@ -313,6 +314,17 @@ async function autoVectorizeRecentChat(chat) {
     // 获取已处理索引集合
     const processedIdentifiers = getProcessedItemIdentifiers(chatId);
     const processedSet = processedIdentifiers.chat;
+    if (dbg) {
+      const tasksDbg = getChatTasks(chatId).map(t => ({id: t.taskId, name: t.name, enabled: t.enabled, hasActual: !!t.actualProcessedItems, legacyRange: t.settings?.chat?.range}));
+      console.log('[AutoPreRAG][tasks]', tasksDbg);
+      if (processedSet.size>0) {
+        // 仅预览前 30 个索引
+        const first = Array.from(processedSet).sort((a,b)=>a-b).slice(0,30);
+        console.log('[AutoPreRAG][processed.preview]', {size: processedSet.size, first});
+      } else {
+        console.log('[AutoPreRAG][processed.preview] empty');
+      }
+    }
 
     const scanRecent = Math.max(1, cfg.scan_recent || 30);
     const maxNew = Math.max(1, cfg.max_new || 5);
@@ -372,19 +384,22 @@ async function autoVectorizeRecentChat(chat) {
       }
     }
 
+    // 过滤原因计数
+    const filterCounters = { system:0, type:0, range:0, processed:0, empty:0, other:0 };
+
     for (let i = startIndex; i <= endIndex; i++) {
       const msg = chat[i];
-      if (!msg) continue;
-      if (msg.is_system) continue; // 不处理系统隐藏消息
-      const isUser = msg.is_user === true;
-      if ((isUser && !typeFilter.user) || (!isUser && !typeFilter.assistant)) continue;
-      if (!inExplicitRange(i)) continue;
-      if (processedSet.has(i)) continue; // 已向量化
-      if (!msg.mes || !msg.mes.trim()) continue;
+      if (!msg) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty msg'); filterCounters.other++; continue; }
+      if (msg.is_system) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: system'); filterCounters.system++; continue; }
+  const isUser = msg.is_user === true;
+      if ((isUser && !typeFilter.user) || (!isUser && !typeFilter.assistant)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: type filtered', {isUser, types: typeFilter}); filterCounters.type++; continue; }
+      if (!inExplicitRange(i)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: out of explicit range'); filterCounters.range++; continue; }
+      if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: already processed'); filterCounters.processed++; continue; }
+      if (!msg.mes || !msg.mes.trim()) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty text'); filterCounters.empty++; continue; }
       candidates.push({ index: i, msg });
     }
 
-    if (candidates.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] no candidates (after filters)'); return; }
+    if (candidates.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] no candidates (after filters)', {filterCounters}); return; }
 
     // 可选：优先用户消息
     if (cfg.user_only_first) {
