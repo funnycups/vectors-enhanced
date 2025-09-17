@@ -599,6 +599,26 @@
           <span>显示查询结果通知</span>
         </label>
 
+        <!-- Auto Pre-RAG Vectorization -->
+        <div class="flex-container m-t-0-5" style="gap:10px;align-items:center;">
+          <label class="checkbox_label" for="vectors_enhanced_auto_pre_rag_enabled" title="在执行向量查询前自动向量化最近未处理的聊天消息，确保检索及时性。">
+            <input id="vectors_enhanced_auto_pre_rag_enabled" type="checkbox" />
+            <span>RAG前自动补向量化</span>
+          </label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <label for="vectors_enhanced_auto_pre_rag_scan" title="扫描最近多少条消息用于补向量化" style="display:flex; align-items:center; gap:4px;">
+              <small>扫描</small>
+              <input id="vectors_enhanced_auto_pre_rag_scan" type="number" class="text_pole" style="width:70px;" min="5" value="30" />
+              <small>条</small>
+            </label>
+            <label for="vectors_enhanced_auto_pre_rag_max" title="单次最多补向量化的消息数" style="display:flex; align-items:center; gap:4px;">
+              <small>最多</small>
+              <input id="vectors_enhanced_auto_pre_rag_max" type="number" class="text_pole" style="width:60px;" min="1" value="8" />
+              <small>条</small>
+            </label>
+          </div>
+        </div>
+
         <!-- Detailed Notification Details -->
         <div id="vectors_enhanced_notification_details" style="margin-left: 1.5rem; display: none;">
           <label class="checkbox_label" for="vectors_enhanced_detailed_notification" title="显示各来源的详细分布（聊天记录、文件、世界信息）">

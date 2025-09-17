@@ -325,6 +325,41 @@ export class SettingsManager {
         $('#vectors_enhanced_notification_details').toggle(this.settings.show_query_notification);
       });
 
+    // RAG前自动补向量化默认值
+    if (!this.settings.auto_pre_rag_vectorize) {
+      this.settings.auto_pre_rag_vectorize = { enabled: false, scan_recent: 30, max_new: 8 };
+    } else {
+      // 兼容缺失字段
+      if (typeof this.settings.auto_pre_rag_vectorize.scan_recent !== 'number') this.settings.auto_pre_rag_vectorize.scan_recent = 30;
+      if (typeof this.settings.auto_pre_rag_vectorize.max_new !== 'number') this.settings.auto_pre_rag_vectorize.max_new = 8;
+    }
+
+    // UI 绑定：开关
+    $('#vectors_enhanced_auto_pre_rag_enabled')
+      .prop('checked', this.settings.auto_pre_rag_vectorize.enabled)
+      .on('input', () => {
+        this.settings.auto_pre_rag_vectorize.enabled = $('#vectors_enhanced_auto_pre_rag_enabled').prop('checked');
+        this.updateAndSave();
+      });
+
+    // 扫描窗口
+    $('#vectors_enhanced_auto_pre_rag_scan')
+      .val(this.settings.auto_pre_rag_vectorize.scan_recent)
+      .on('input', () => {
+        const v = Number($('#vectors_enhanced_auto_pre_rag_scan').val());
+        this.settings.auto_pre_rag_vectorize.scan_recent = isNaN(v) ? 30 : Math.max(5, v);
+        this.updateAndSave();
+      });
+
+    // 单次最大
+    $('#vectors_enhanced_auto_pre_rag_max')
+      .val(this.settings.auto_pre_rag_vectorize.max_new)
+      .on('input', () => {
+        const v = Number($('#vectors_enhanced_auto_pre_rag_max').val());
+        this.settings.auto_pre_rag_vectorize.max_new = isNaN(v) ? 8 : Math.max(1, v);
+        this.updateAndSave();
+      });
+
     // 详细通知模式
     $('#vectors_enhanced_detailed_notification')
       .prop('checked', this.settings.detailed_notification)

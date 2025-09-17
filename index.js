@@ -284,6 +284,123 @@ let syncBlocked = false;
 
 // 创建存储适配器实例
 let storageAdapter = null;
+
+// Auto Pre-RAG Vectorization default config
+if (!settings.auto_pre_rag_vectorize) {
+  settings.auto_pre_rag_vectorize = {
+    enabled: false,          // 初始保持关闭，避免意外性能影响
+    scan_recent: 30,         // 扫描最近多少条聊天消息
+    max_new: 8,              // 单次最多补向量化的消息数
+    skip_if_vectorizing: true, // 若已有向量化进行中则跳过
+    user_only_first: false   // 若为 true 只优先补用户消息
+  };
+}
+
+// 执行向量查询前补向量化最近未处理消息
+async function autoVectorizeRecentChat(chat) {
+  try {
+    if (!settings.master_enabled) return; // 主开关关闭
+    const cfg = settings.auto_pre_rag_vectorize;
+    if (!cfg || !cfg.enabled) return; // 未启用
+    if (!settings.selected_content?.chat?.enabled) return; // 聊天未被选为向量化来源
+    if (cfg.skip_if_vectorizing && (typeof isVectorizing !== 'undefined') && isVectorizing) return; // 正在向量化
+    const chatId = getCurrentChatId();
+    if (!chatId || !chat || chat.length === 0) return;
+
+    // 获取已处理索引集合
+    const processedIdentifiers = getProcessedItemIdentifiers(chatId);
+    const processedSet = processedIdentifiers.chat;
+
+    const scanRecent = Math.max(1, cfg.scan_recent || 30);
+    const maxNew = Math.max(1, cfg.max_new || 5);
+  const startIndex = Math.max(0, chat.length - scanRecent);
+  const endIndex = chat.length - 1;
+
+    // 参考 selected_content.chat.types 过滤类型
+    const typeFilter = settings.selected_content.chat.types || { user: true, assistant: true };
+
+    // 收集候选
+    const candidates = [];
+    // 选区限制（range/newRanges) 与 getVectorizableContent 行为保持一致
+    const chatSel = settings.selected_content.chat;
+    const inExplicitRange = (idx) => {
+      if (chatSel.newRanges && Array.isArray(chatSel.newRanges) && chatSel.newRanges.length > 0) {
+        return chatSel.newRanges.some(r => idx >= r.start && (r.end === -1 || idx <= r.end));
+      }
+      if (chatSel.range) {
+        const rs = chatSel.range.start || 0;
+        const re = chatSel.range.end === -1 ? Infinity : chatSel.range.end;
+        return idx >= rs && idx <= re;
+      }
+      return true;
+    };
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      const msg = chat[i];
+      if (!msg) continue;
+      if (msg.is_system) continue; // 不处理系统隐藏消息
+      const isUser = msg.is_user === true;
+      if ((isUser && !typeFilter.user) || (!isUser && !typeFilter.assistant)) continue;
+      if (!inExplicitRange(i)) continue;
+      if (processedSet.has(i)) continue; // 已向量化
+      if (!msg.mes || !msg.mes.trim()) continue;
+      candidates.push({ index: i, msg });
+    }
+
+    if (candidates.length === 0) return; // 没有需要补的
+
+    // 可选：优先用户消息
+    if (cfg.user_only_first) {
+      candidates.sort((a, b) => (b.msg.is_user === true) - (a.msg.is_user === true));
+    }
+
+    const toTake = candidates.slice(0, maxNew);
+
+    // 构造最小向量化项（复用 createVectorItem 所需结构）
+    const vectorItems = toTake.map(({ index, msg }) => {
+      return {
+        type: 'chat',
+        text: substituteParams(msg.mes),
+        rawText: substituteParams(msg.mes),
+        metadata: {
+          index,
+          is_user: msg.is_user === true,
+          name: msg.name,
+          is_hidden: msg.is_system === true
+        },
+        selected: true
+      };
+    });
+
+    if (vectorItems.length === 0) return;
+  console.log(`[Vectors][AutoPreRAG] 补向量化 ${vectorItems.length} 条 (scan=${scanRecent}, start=${startIndex})`);
+
+  // 最小内容设置：仅 chat
+    const minimalContentSettings = {
+      chat: {
+        enabled: true,
+        include_hidden: false,
+        types: typeFilter,
+        range: { start: vectorItems[0].metadata.index, end: vectorItems[vectorItems.length - 1].metadata.index },
+        newRanges: null,
+        tag_rules: settings.selected_content.chat.tag_rules || []
+      },
+      files: { enabled: false, selected: [] },
+      world_info: { enabled: false, selected: {} }
+    };
+
+    // 调用核心向量化（增量）
+    const result = await performVectorization(minimalContentSettings, chatId, true, vectorItems, {
+      skipDeduplication: true,
+      taskType: 'vectorization',
+      customTaskName: 'AutoSyncRAG'
+    });
+
+  if (result?.success) console.log(`[Vectors][AutoPreRAG] 完成: +${result.vectorized || vectorItems.length}`); else console.warn('[Vectors][AutoPreRAG] 未成功', result);
+  } catch (err) {
+    console.error('[Vectors][AutoPreRAG] 发生错误:', err);
+  }
+}
 // 创建向量化适配器实例
 let vectorizationAdapter = null;
 // 创建 Rerank 服务实例
@@ -2454,6 +2571,13 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       console.debug('Vectors: No chat ID available');
       logTimingAndReturn('无聊天ID');
       return;
+    }
+
+    // 在执行向量查询 (RAG) 前尝试自动补向量化最近消息
+    try {
+      await autoVectorizeRecentChat(chat);
+    } catch (e) {
+      console.warn('[Vectors] Auto pre-RAG vectorization failed (non-fatal):', e);
     }
 
     // Query vectors based on recent messages
