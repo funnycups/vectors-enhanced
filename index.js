@@ -292,20 +292,23 @@ if (!settings.auto_pre_rag_vectorize) {
     scan_recent: 30,         // 扫描最近多少条聊天消息
     max_new: 8,              // 单次最多补向量化的消息数
     skip_if_vectorizing: true, // 若已有向量化进行中则跳过
-    user_only_first: false   // 若为 true 只优先补用户消息
+    user_only_first: false,  // 若为 true 只优先补用户消息
+    debug: true              // 调试：打印详细早退原因与统计
   };
 }
 
 // 执行向量查询前补向量化最近未处理消息
 async function autoVectorizeRecentChat(chat) {
   try {
-    if (!settings.master_enabled) return; // 主开关关闭
+    const dbg = settings.auto_pre_rag_vectorize?.debug;
+    if (!settings.master_enabled) { if (dbg) console.log('[AutoPreRAG][skip] master_enabled = false'); return; }
     const cfg = settings.auto_pre_rag_vectorize;
-    if (!cfg || !cfg.enabled) return; // 未启用
-    if (!settings.selected_content?.chat?.enabled) return; // 聊天未被选为向量化来源
-    if (cfg.skip_if_vectorizing && (typeof isVectorizing !== 'undefined') && isVectorizing) return; // 正在向量化
+    if (!cfg || !cfg.enabled) { if (dbg) console.log('[AutoPreRAG][skip] feature disabled'); return; }
+    if (!settings.selected_content?.chat?.enabled) { if (dbg) console.log('[AutoPreRAG][skip] chat source not enabled'); return; }
+    if (cfg.skip_if_vectorizing && (typeof isVectorizing !== 'undefined') && isVectorizing) { if (dbg) console.log('[AutoPreRAG][skip] isVectorizing active'); return; }
     const chatId = getCurrentChatId();
-    if (!chatId || !chat || chat.length === 0) return;
+    if (!chatId) { if (dbg) console.log('[AutoPreRAG][skip] no chatId'); return; }
+    if (!chat || chat.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] empty chat'); return; }
 
     // 获取已处理索引集合
     const processedIdentifiers = getProcessedItemIdentifiers(chatId);
@@ -347,7 +350,7 @@ async function autoVectorizeRecentChat(chat) {
       candidates.push({ index: i, msg });
     }
 
-    if (candidates.length === 0) return; // 没有需要补的
+    if (candidates.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] no candidates (after filters)'); return; }
 
     // 可选：优先用户消息
     if (cfg.user_only_first) {
@@ -372,8 +375,21 @@ async function autoVectorizeRecentChat(chat) {
       };
     });
 
-    if (vectorItems.length === 0) return;
-  console.log(`[Vectors][AutoPreRAG] 补向量化 ${vectorItems.length} 条 (scan=${scanRecent}, start=${startIndex})`);
+    if (vectorItems.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] vectorItems empty'); return; }
+    if (dbg) {
+      console.log('[AutoPreRAG][stats]', {
+        scanRecent,
+        chatLength: chat.length,
+        startIndex,
+        endIndex,
+        processedCount: processedSet.size,
+        candidateCount: candidates.length,
+        taken: vectorItems.length,
+        indices: vectorItems.map(v=>v.metadata.index)
+      });
+    } else {
+      console.log(`[Vectors][AutoPreRAG] 补向量化 ${vectorItems.length} 条 (scan=${scanRecent}, start=${startIndex})`);
+    }
 
   // 最小内容设置：仅 chat
     const minimalContentSettings = {
@@ -396,7 +412,12 @@ async function autoVectorizeRecentChat(chat) {
       customTaskName: 'AutoSyncRAG'
     });
 
-  if (result?.success) console.log(`[Vectors][AutoPreRAG] 完成: +${result.vectorized || vectorItems.length}`); else console.warn('[Vectors][AutoPreRAG] 未成功', result);
+  if (result?.success) {
+      console.log(`[Vectors][AutoPreRAG] 完成: +${result.vectorized || vectorItems.length}`);
+    } else {
+      console.warn('[Vectors][AutoPreRAG] 未成功', result);
+      if (dbg) console.log('[AutoPreRAG][debug] result object:', result);
+    }
   } catch (err) {
     console.error('[Vectors][AutoPreRAG] 发生错误:', err);
   }
