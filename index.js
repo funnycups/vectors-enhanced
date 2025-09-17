@@ -302,27 +302,27 @@ if (!settings.auto_pre_rag_vectorize) {
 async function autoVectorizeRecentChat(chat) {
   try {
     const dbg = settings.auto_pre_rag_vectorize?.debug;
-    if (!settings.master_enabled) { if (dbg) console.log('[AutoPreRAG][skip] master_enabled = false'); return; }
+  if (!settings.master_enabled) { if (dbg) console.log('Vectors: AutoPreRAG skip - master_enabled = false'); return; }
     const cfg = settings.auto_pre_rag_vectorize;
-    if (!cfg || !cfg.enabled) { if (dbg) console.log('[AutoPreRAG][skip] feature disabled'); return; }
-    if (!settings.selected_content?.chat?.enabled) { if (dbg) console.log('[AutoPreRAG][skip] chat source not enabled'); return; }
-    if (cfg.skip_if_vectorizing && (typeof isVectorizing !== 'undefined') && isVectorizing) { if (dbg) console.log('[AutoPreRAG][skip] isVectorizing active'); return; }
+  if (!cfg || !cfg.enabled) { if (dbg) console.log('Vectors: AutoPreRAG skip - feature disabled'); return; }
+  if (!settings.selected_content?.chat?.enabled) { if (dbg) console.log('Vectors: AutoPreRAG skip - chat source not enabled'); return; }
+  if (cfg.skip_if_vectorizing && (typeof isVectorizing !== 'undefined') && isVectorizing) { if (dbg) console.log('Vectors: AutoPreRAG skip - isVectorizing active'); return; }
     const chatId = getCurrentChatId();
-    if (!chatId) { if (dbg) console.log('[AutoPreRAG][skip] no chatId'); return; }
-    if (!chat || chat.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] empty chat'); return; }
+  if (!chatId) { if (dbg) console.log('Vectors: AutoPreRAG skip - no chatId'); return; }
+  if (!chat || chat.length === 0) { if (dbg) console.log('Vectors: AutoPreRAG skip - empty chat'); return; }
 
     // 获取已处理索引集合
     const processedIdentifiers = getProcessedItemIdentifiers(chatId);
     const processedSet = processedIdentifiers.chat;
     if (dbg) {
       const tasksDbg = getChatTasks(chatId).map(t => ({id: t.taskId, name: t.name, enabled: t.enabled, hasActual: !!t.actualProcessedItems, legacyRange: t.settings?.chat?.range}));
-      console.log('[AutoPreRAG][tasks]', tasksDbg);
+  console.log('Vectors: AutoPreRAG tasks', tasksDbg);
       if (processedSet.size>0) {
         // 仅预览前 30 个索引
         const first = Array.from(processedSet).sort((a,b)=>a-b).slice(0,30);
-        console.log('[AutoPreRAG][processed.preview]', {size: processedSet.size, first});
+  console.log('Vectors: AutoPreRAG processed.preview', {size: processedSet.size, first});
       } else {
-        console.log('[AutoPreRAG][processed.preview] empty');
+  console.log('Vectors: AutoPreRAG processed.preview empty');
       }
     }
 
@@ -373,12 +373,12 @@ async function autoVectorizeRecentChat(chat) {
       // 预先解析一次以便日志
       if (chatSel.newRanges && Array.isArray(chatSel.newRanges) && chatSel.newRanges.length > 0) {
         inExplicitRange(-1); // 触发解析
-        console.log('[AutoPreRAG][range] resolved newRanges', resolvedRanges);
+  console.log('Vectors: AutoPreRAG range resolved newRanges', resolvedRanges);
       } else if (chatSel.range) {
         inExplicitRange(-1);
-        console.log('[AutoPreRAG][range] resolved single range', resolvedRanges[0]);
+  console.log('Vectors: AutoPreRAG range resolved single range', resolvedRanges[0]);
       } else {
-        console.log('[AutoPreRAG][range] no explicit range (all allowed)');
+  console.log('Vectors: AutoPreRAG range no explicit range (all allowed)');
       }
     }
 
@@ -397,12 +397,12 @@ async function autoVectorizeRecentChat(chat) {
     for (const m of allPreFiltered) {
       const i = m.index;
       if (i < startIndex || i > endIndex) continue; // 限制最近窗口
-      if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: already processed'); filterCounters.processed++; continue; }
-      if (!m.text || !m.text.trim()) { if (dbg && candidates.length===0) console.log('[AutoPreRAG][filter]', i, 'skip: empty text (post-getMessages)'); filterCounters.empty++; continue; }
+  if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: already processed'); filterCounters.processed++; continue; }
+  if (!m.text || !m.text.trim()) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: empty text (post-getMessages)'); filterCounters.empty++; continue; }
       candidates.push({ index: i, msg: m });
     }
 
-    if (candidates.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] no candidates (after filters)', {filterCounters}); return; }
+  if (candidates.length === 0) { if (dbg) console.log('Vectors: AutoPreRAG skip - no candidates (after filters)', {filterCounters}); return; }
 
     // 可选：优先用户消息
     if (cfg.user_only_first) {
@@ -423,9 +423,9 @@ async function autoVectorizeRecentChat(chat) {
       return createVectorItem(msg, extractedText, extractedText);
     });
 
-    if (vectorItems.length === 0) { if (dbg) console.log('[AutoPreRAG][skip] vectorItems empty'); return; }
+  if (vectorItems.length === 0) { if (dbg) console.log('Vectors: AutoPreRAG skip - vectorItems empty'); return; }
     if (dbg) {
-      console.log('[AutoPreRAG][stats]', {
+  console.log('Vectors: AutoPreRAG stats', {
         scanRecent,
         chatLength: chat.length,
         startIndex,
@@ -436,7 +436,7 @@ async function autoVectorizeRecentChat(chat) {
         indices: vectorItems.map(v=>v.metadata.index)
       });
     } else {
-      console.log(`[Vectors][AutoPreRAG] 补向量化 ${vectorItems.length} 条 (scan=${scanRecent}, start=${startIndex})`);
+  console.log(`Vectors: AutoPreRAG 补向量化 ${vectorItems.length} 条 (scan=${scanRecent}, start=${startIndex})`);
     }
 
   // 最小内容设置：仅 chat
@@ -461,13 +461,13 @@ async function autoVectorizeRecentChat(chat) {
     });
 
   if (result?.success) {
-      console.log(`[Vectors][AutoPreRAG] 完成: +${result.vectorized || vectorItems.length}`);
+  console.log(`Vectors: AutoPreRAG 完成 +${result.vectorized || vectorItems.length}`);
     } else {
-      console.warn('[Vectors][AutoPreRAG] 未成功', result);
-      if (dbg) console.log('[AutoPreRAG][debug] result object:', result);
+  console.warn('Vectors: AutoPreRAG 未成功', result);
+  if (dbg) console.log('Vectors: AutoPreRAG debug result object', result);
     }
   } catch (err) {
-    console.error('[Vectors][AutoPreRAG] 发生错误:', err);
+  console.error('Vectors: AutoPreRAG 发生错误', err);
   }
 }
 // 创建向量化适配器实例
