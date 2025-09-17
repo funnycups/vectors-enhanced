@@ -293,8 +293,9 @@ if (!settings.auto_pre_rag_vectorize) {
     max_new: 8,              // 单次最多补向量化的消息数
     skip_if_vectorizing: true, // 若已有向量化进行中则跳过
     user_only_first: false,  // 若为 true 只优先补用户消息
-  debug: true,             // 调试：打印详细早退原因与统计
-  debug_ignore_processed: false // 调试：忽略 processedSet（用于确认是否是判定错误）
+    debug: true,             // 调试：打印详细早退原因与统计
+    debug_ignore_processed: false, // 调试：忽略 processedSet（用于确认是否是判定错误）
+    full_extraction: true    // 使用完整 getVectorizableContent 提取路径，保证与“预览”一致
   };
 }
 
@@ -334,7 +335,9 @@ async function autoVectorizeRecentChat(chat) {
     // 参考 selected_content.chat.types 过滤类型
     const typeFilter = settings.selected_content.chat.types || { user: true, assistant: true };
 
-    const candidates = [];
+  const useFullExtraction = cfg.full_extraction === true;
+  if (dbg) console.log('Vectors: AutoPreRAG mode', useFullExtraction ? 'full_extraction(getVectorizableContent)' : 'light(getMessages)');
+  const candidates = [];
     const chatSel = settings.selected_content.chat;
     // 解析支持负数（相对末尾）范围：-1 仍表示无限/直到末尾；其它负数按 chat.length + value 计算
     const resolveIndex = (raw, isEnd) => {
@@ -385,21 +388,29 @@ async function autoVectorizeRecentChat(chat) {
     // 过滤原因计数
     const filterCounters = { system:0, type:0, range:0, processed:0, empty:0, other:0 };
 
-    // 与标准路径一致：使用 getMessages 进行预过滤（含 substituteParams 与隐藏/类型过滤）
-    const gmOptions = {
-      includeHidden: chatSel.include_hidden || false,
-      types: typeFilter,
-      range: chatSel.range,
-      newRanges: chatSel.newRanges
-    };
-    const allPreFiltered = getMessages(chat, gmOptions); // 与 getVectorizableContent 相同入口
+    let sourceItems = [];
+    if (useFullExtraction) {
+      try {
+        const fullItems = await getVectorizableContent(settings.selected_content);
+        sourceItems = fullItems.filter(it => it.type === 'chat');
+        if (dbg) console.log('Vectors: AutoPreRAG full_extraction items', sourceItems.length);
+      } catch (e) {
+        console.warn('Vectors: AutoPreRAG full_extraction failed, fallback to light mode', e);
+        cfg.full_extraction = false;
+      }
+    }
+    if (!useFullExtraction || sourceItems.length === 0) {
+      const gmOptions = { includeHidden: chatSel.include_hidden || false, types: typeFilter, range: chatSel.range, newRanges: chatSel.newRanges };
+      sourceItems = getMessages(chat, gmOptions).map(m => createVectorItem(m, m.text, m.text));
+      if (dbg) console.log('Vectors: AutoPreRAG light extraction items', sourceItems.length);
+    }
 
-    for (const m of allPreFiltered) {
-      const i = m.index;
-      if (i < startIndex || i > endIndex) continue; // 限制最近窗口
-  if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: already processed'); filterCounters.processed++; continue; }
-  if (!m.text || !m.text.trim()) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: empty text (post-getMessages)'); filterCounters.empty++; continue; }
-      candidates.push({ index: i, msg: m });
+    for (const item of sourceItems) {
+      const i = item.metadata.index;
+      if (i < startIndex || i > endIndex) continue;
+      if (!cfg.debug_ignore_processed && processedSet.has(i)) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: already processed'); filterCounters.processed++; continue; }
+      if (!item.text || !item.text.trim()) { if (dbg && candidates.length===0) console.log('Vectors: AutoPreRAG filter', i, 'skip: empty text (post-extraction)'); filterCounters.empty++; continue; }
+      candidates.push({ index: i, item });
     }
 
   if (candidates.length === 0) { if (dbg) console.log('Vectors: AutoPreRAG skip - no candidates (after filters)', {filterCounters}); return; }
@@ -410,18 +421,21 @@ async function autoVectorizeRecentChat(chat) {
     }
 
     const toTake = candidates.slice(0, maxNew);
-
-    // 构造最小向量化项（复用 createVectorItem 所需结构）
-    const rules = chatSel.tag_rules || [];
-    const vectorItems = toTake.map(({ index, msg }) => {
-      let extractedText;
-      if (msg.index === 0 || msg.is_user === true) {
-        extractedText = msg.text; // 首楼或用户楼层：不做标签提取
-      } else {
-        extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
-      }
-      return createVectorItem(msg, extractedText, extractedText);
-    });
+    let vectorItems;
+    if (useFullExtraction) {
+      vectorItems = toTake.map(({ item }) => item); // 已是最终格式
+    } else {
+      const rules = chatSel.tag_rules || [];
+      vectorItems = toTake.map(({ item }) => {
+        let extractedText;
+        if (item.metadata.index === 0 || item.metadata.is_user === true) {
+          extractedText = item.text;
+        } else {
+          extractedText = extractTagContent(item.text, rules, settings.content_blacklist || []);
+        }
+        return createVectorItem({ ...item, metadata: item.metadata, index: item.metadata.index, is_user: item.metadata.is_user }, extractedText, extractedText);
+      });
+    }
 
   if (vectorItems.length === 0) { if (dbg) console.log('Vectors: AutoPreRAG skip - vectorItems empty'); return; }
     if (dbg) {
