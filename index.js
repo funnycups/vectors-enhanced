@@ -135,6 +135,8 @@ const settings = {
   rerank_apiKey: '',
   rerank_model: 'Pro/BAAI/bge-reranker-v2-m3',
   rerank_top_n: 20,
+  // 每次发送到 Rerank API 的候选文档数量上限（用于控制成本）
+  rerank_input_limit: 50,
   rerank_hybrid_alpha: 0.7, // Rerank score weight
   rerank_success_notify: true, // 是否显示Rerank成功通知
 

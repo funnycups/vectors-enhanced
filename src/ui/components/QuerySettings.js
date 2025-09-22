@@ -30,6 +30,7 @@ export class QuerySettings {
             'rerank_apiKey',
             'rerank_model',
             'rerank_top_n',
+            'rerank_input_limit',
             'rerank_hybrid_alpha'
         ];
         
@@ -83,6 +84,12 @@ export class QuerySettings {
         $('#vectors_enhanced_rerank_top_n').on('input', (e) => {
             const value = parseInt(e.target.value) || 1;
             this.handleFieldChange('rerank_top_n', value);
+        });
+
+        // Rerank input limit
+        $('#vectors_enhanced_rerank_input_limit').on('input', (e) => {
+            const value = parseInt(e.target.value) || 1;
+            this.handleFieldChange('rerank_input_limit', value);
         });
 
         $('#vectors_enhanced_rerank_hybrid_alpha').on('input', (e) => {
@@ -184,6 +191,7 @@ export class QuerySettings {
             '#vectors_enhanced_rerank_apiKey', 
             '#vectors_enhanced_rerank_model',
             '#vectors_enhanced_rerank_top_n',
+            '#vectors_enhanced_rerank_input_limit',
             '#vectors_enhanced_rerank_hybrid_alpha',
             '#vectors_enhanced_rerank_success_notify'
         ];
@@ -370,6 +378,12 @@ export class QuerySettings {
             isValid = false;
         }
 
+        // Validate input limit
+        if (this.settings.rerank_input_limit <= 0 || this.settings.rerank_input_limit > 500) {
+            errors.push('Rerank input limit must be between 1 and 500');
+            isValid = false;
+        }
+
         if (this.settings.rerank_hybrid_alpha < 0 || this.settings.rerank_hybrid_alpha > 1) {
             errors.push('Rerank hybrid alpha must be between 0 and 1');
             isValid = false;
@@ -507,6 +521,7 @@ export class QuerySettings {
             rerank_apiKey: '',
             rerank_model: '',
             rerank_top_n: 10,
+            rerank_input_limit: 50,
             rerank_hybrid_alpha: 0.7
         };
 

@@ -6,6 +6,7 @@
  * @property {string} apiKey - API key for authentication
  * @property {string} model - Model to use for reranking
  * @property {number} top_n - Number of top results to return
+ * @property {number} input_limit - Max number of candidates to send to API
  * @property {number} hybrid_alpha - Weight for hybrid scoring (0-1)
  * @property {boolean} success_notify - Whether to show success notifications
  * @property {boolean} deduplication_enabled - Whether to enable deduplication

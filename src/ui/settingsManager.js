@@ -261,6 +261,19 @@ export class SettingsManager {
         this.updateAndSave();
       });
 
+    // Rerank 候选上限（发送给API的文档数上限）
+    if (typeof this.settings.rerank_input_limit !== 'number') {
+      this.settings.rerank_input_limit = 50;
+    }
+    $('#vectors_enhanced_rerank_input_limit')
+      .val(this.settings.rerank_input_limit)
+      .on('input', () => {
+        const v = Number($('#vectors_enhanced_rerank_input_limit').val());
+        // 合法范围：1-500，默认50
+        this.settings.rerank_input_limit = isNaN(v) ? 50 : Math.min(500, Math.max(1, v));
+        this.updateAndSave();
+      });
+
     $('#vectors_enhanced_rerank_hybrid_alpha')
       .val(this.settings.rerank_hybrid_alpha)
       .on('input', () => {

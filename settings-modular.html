@@ -749,6 +749,10 @@
               <label for="vectors_enhanced_rerank_top_n"><small>Rerank Top N</small></label>
               <input id="vectors_enhanced_rerank_top_n" type="number" class="text_pole" min="1" max="100">
             </div>
+            <div class="flex1" title="发送到 Rerank API 的候选文档数量上限（减小可降低费用）">
+              <label for="vectors_enhanced_rerank_input_limit"><small>Rerank 候选上限</small></label>
+              <input id="vectors_enhanced_rerank_input_limit" type="number" class="text_pole" min="1" max="500">
+            </div>
             <div class="flex1" title="混合分数中Rerank分数的权重 (0-1)">
               <label for="vectors_enhanced_rerank_hybrid_alpha"><small>混合权重</small></label>
               <input id="vectors_enhanced_rerank_hybrid_alpha" type="number" class="text_pole" min="0" max="1" step="0.1">

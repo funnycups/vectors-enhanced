@@ -17,6 +17,7 @@ export class RerankConfig {
             apiKey: this.settings.rerank_apiKey || '',
             model: this.settings.rerank_model || 'Pro/BAAI/bge-reranker-v2-m3',
             top_n: this.settings.rerank_top_n || 20,
+            input_limit: this.settings.rerank_input_limit || 50,
             hybrid_alpha: this.settings.rerank_hybrid_alpha || 0.7,
             success_notify: this.settings.rerank_success_notify !== false,
             deduplication_enabled: this.settings.rerank_deduplication_enabled || false,
@@ -43,6 +44,9 @@ export class RerankConfig {
         }
         if (updates.top_n !== undefined) {
             this.settings.rerank_top_n = updates.top_n;
+        }
+        if (updates.input_limit !== undefined) {
+            this.settings.rerank_input_limit = updates.input_limit;
         }
         if (updates.hybrid_alpha !== undefined) {
             this.settings.rerank_hybrid_alpha = updates.hybrid_alpha;
@@ -82,6 +86,9 @@ export class RerankConfig {
             if (config.top_n < 1) {
                 errors.push('Top N must be at least 1');
             }
+            if (config.input_limit < 1 || config.input_limit > 500) {
+                errors.push('Input limit must be between 1 and 500');
+            }
         }
 
         return {
@@ -101,6 +108,7 @@ export class RerankConfig {
             apiKey: '',
             model: 'Pro/BAAI/bge-reranker-v2-m3',
             top_n: 20,
+            input_limit: 50,
             hybrid_alpha: 0.7,
             success_notify: true,
             deduplication_enabled: false,

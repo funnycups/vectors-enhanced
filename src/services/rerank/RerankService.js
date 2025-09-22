@@ -48,10 +48,18 @@ export class RerankService {
                 _rerank_index: index
             }));
 
-            // Prepare documents for reranking
-            const documentsToRerank = indexedResults.map((x, index) => ({
+            // Apply input limit to control cost (limit the number of candidates sent to API)
+            const inputLimit = (config && typeof config.input_limit === 'number' && config.input_limit > 0)
+                ? config.input_limit
+                : Infinity;
+            const limitedResults = indexedResults.slice(0, inputLimit);
+
+            // Prepare documents for reranking (only limited subset is sent)
+            const documentsToRerank = limitedResults.map((x, index) => ({
                 text: x.text,
-                index: index
+                // Keep mapping: local index within limited subset and original index
+                index: index,
+                originalIndex: x._rerank_index
             }));
 
             // Build rerank request
@@ -64,7 +72,8 @@ export class RerankService {
             const rerankedResults = this._processRerankResponse(
                 indexedResults,
                 rerankResponse,
-                config.hybrid_alpha
+                config.hybrid_alpha,
+                documentsToRerank
             );
 
             // Show notification if enabled
@@ -137,28 +146,43 @@ export class RerankService {
      * Process rerank response and calculate hybrid scores
      * @private
      */
-    _processRerankResponse(indexedResults, rerankData, hybridAlpha) {
+    _processRerankResponse(indexedResults, rerankData, hybridAlpha, documentsToRerank = null) {
         if (!rerankData.results || !Array.isArray(rerankData.results)) {
             throw new Error('Unexpected rerank API response format');
+        }
+
+        // Build a map from original index to returned rerank score (only for limited subset)
+        const rerankScoreByOriginalIndex = new Map();
+
+        if (documentsToRerank && Array.isArray(documentsToRerank) && documentsToRerank.length > 0) {
+            // Try to align response.results with documentsToRerank via 'index' or position
+            documentsToRerank.forEach((doc, docArrayIndex) => {
+                // Prefer match by explicit index
+                const match = rerankData.results.find(r => r.index === doc.index) || rerankData.results[docArrayIndex] || null;
+                let relevanceScore = 0;
+                if (match && typeof match.relevance_score === 'number') relevanceScore = match.relevance_score;
+                else if (match && typeof match.score === 'number') relevanceScore = match.score;
+                rerankScoreByOriginalIndex.set(doc.originalIndex, relevanceScore);
+            });
         }
 
         const rerankedResults = indexedResults.map((result, arrayIndex) => {
             let relevanceScore = 0;
             
-            // Try multiple matching methods
-            const rerankedResult = 
-                // Method 1: Match by index field
-                rerankData.results.find(r => r.index === result._rerank_index) ||
-                // Method 2: Match by array position
-                rerankData.results[arrayIndex] ||
-                // Method 3: Use corresponding position if lengths match
-                (rerankData.results.length === indexedResults.length ? rerankData.results[arrayIndex] : null);
-            
-            if (rerankedResult && typeof rerankedResult.relevance_score === 'number') {
-                relevanceScore = rerankedResult.relevance_score;
-            } else if (rerankedResult && typeof rerankedResult.score === 'number') {
-                // Compatibility with APIs using 'score' instead of 'relevance_score'
-                relevanceScore = rerankedResult.score;
+            // If we sent a limited subset, prefer score from map; otherwise, try matching strategies
+            if (rerankScoreByOriginalIndex.has(result._rerank_index)) {
+                relevanceScore = rerankScoreByOriginalIndex.get(result._rerank_index) || 0;
+            } else {
+                // Fallback strategies remain for full-size submissions
+                const rerankedResult = 
+                    rerankData.results.find(r => r.index === result._rerank_index) ||
+                    rerankData.results[arrayIndex] ||
+                    (rerankData.results.length === indexedResults.length ? rerankData.results[arrayIndex] : null);
+                if (rerankedResult && typeof rerankedResult.relevance_score === 'number') {
+                    relevanceScore = rerankedResult.relevance_score;
+                } else if (rerankedResult && typeof rerankedResult.score === 'number') {
+                    relevanceScore = rerankedResult.score;
+                }
             }
             
             // Calculate hybrid score
