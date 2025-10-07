@@ -247,6 +247,7 @@ export class VectorizationProcessor extends ITextProcessor {
         const chunkSize = vectorizationSettings.chunk_size || 1000;
         const overlapPercent = vectorizationSettings.overlap_percent || 10;
         const forceChunkDelimiter = vectorizationSettings.force_chunk_delimiter;
+        const chunkingMode = (vectorizationSettings.chunking_mode || 'size');
         
         // Log metadata at the start of prepareVectorizationChunks
         logger.log('prepareVectorizationChunks received metadata:', {
@@ -269,6 +270,12 @@ export class VectorizationProcessor extends ITextProcessor {
             });
         }
         
+        // If user selected conversation-turn mode and content is chat array, route to turns chunking
+        if (chunkingMode === 'turns' && metadata.type === 'chat' && Array.isArray(content)) {
+            logger.log('Using conversation-turn chunking mode for chat array');
+            return this.chunkByConversationTurns(content, metadata);
+        }
+
         // Check if this is summary vectorization mode
         if (metadata.taskType === 'summary_vectorization' && 
             typeof content === 'string' && 
@@ -383,7 +390,14 @@ export class VectorizationProcessor extends ITextProcessor {
                 }
                 
                 // Apply type-specific chunking for array items
-                if (itemMetadata.type === 'chat') {
+                if (chunkingMode === 'turns' && itemMetadata.type === 'chat') {
+                    // When chunking by turns but we received per-item text, treat each message as a single chunk
+                    // Actual pairing should have been handled when content is the array at parent level.
+                    chunks.push({
+                        text: `[META:floor=${itemMetadata.index}] ${itemText}`,
+                        metadata: { ...itemMetadata, chunk_type: 'chat_turn_single', is_chunked: false, chunk_index: 0, chunk_total: 1 }
+                    });
+                } else if (itemMetadata.type === 'chat') {
                     const chatChunks = this.chunkChatMessage(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
                     chunks.push(...chatChunks);
                 } else if (itemMetadata.type === 'world_info') {
@@ -474,6 +488,98 @@ export class VectorizationProcessor extends ITextProcessor {
             }));
         }
         
+        return chunks;
+    }
+
+    /**
+     * Chunk by conversation turns: pair user + assistant as one chunk. Handle floor 0 assistant-only.
+     * @param {Array} contentArray - Array of chat items: each is {text, metadata:{index, is_user, ...}}
+     * @param {Object} parentMeta - Metadata to inherit
+     * @returns {Array} chunks
+     */
+    chunkByConversationTurns(contentArray, parentMeta) {
+        const chunks = [];
+        // Normalize items to ensure we have needed flags
+        const items = contentArray.map((it) => {
+            if (typeof it === 'string') return { text: it, metadata: { ...parentMeta } };
+            const m = it.metadata || {};
+            return { text: it.text || it.content || '', metadata: m };
+        }).filter(it => it.text && it.text.trim().length > 0);
+
+        // Sort by index if present to ensure chronological order
+        items.sort((a, b) => {
+            const ai = a.metadata?.index ?? 0;
+            const bi = b.metadata?.index ?? 0;
+            return ai - bi;
+        });
+
+        let i = 0;
+        while (i < items.length) {
+            const cur = items[i];
+            const isUser = !!cur.metadata?.is_user;
+            const isSystem = !!cur.metadata?.is_hidden; // hidden treated as system in our utils
+
+            // If this is the very first item and it's assistant (not user), emit as a single chunk
+            if (i === 0 && !isUser && !isSystem) {
+                chunks.push({
+                    text: `[META:turn=start_assistant,floor=${cur.metadata?.index}] ${cur.text}`,
+                    metadata: { ...parentMeta, ...cur.metadata, chunk_type: 'chat_turn', role_pattern: 'A', chunk_index: chunks.length, is_chunked: false }
+                });
+                i += 1;
+                continue;
+            }
+
+            if (isUser) {
+                // Try to pair with next assistant message
+                const userItem = cur;
+                const next = items[i + 1];
+                if (next && !next.metadata?.is_user && !next.metadata?.is_hidden) {
+                    const assistantItem = next;
+                    const combined = `User(#${userItem.metadata?.index}):\n${userItem.text}\n\nAssistant(#${assistantItem.metadata?.index}):\n${assistantItem.text}`;
+                    chunks.push({
+                        text: `[META:turn=U+A,ufloor=${userItem.metadata?.index},afloor=${assistantItem.metadata?.index}] ${combined}`,
+                        metadata: {
+                            ...parentMeta,
+                            type: 'chat',
+                            user_index: userItem.metadata?.index,
+                            assistant_index: assistantItem.metadata?.index,
+                            role_pattern: 'UA',
+                            is_chunked: false,
+                            chunk_type: 'chat_turn'
+                        }
+                    });
+                    i += 2;
+                    continue;
+                } else {
+                    // No assistant follows; fall back to single user chunk
+                    chunks.push({
+                        text: `[META:turn=user_only,floor=${userItem.metadata?.index}] ${userItem.text}`,
+                        metadata: { ...parentMeta, ...userItem.metadata, role_pattern: 'U', is_chunked: false, chunk_type: 'chat_turn' }
+                    });
+                    i += 1;
+                    continue;
+                }
+            } else {
+                // Assistant not paired after user (or system/other) -> emit single
+                chunks.push({
+                    text: `[META:turn=assistant_only,floor=${cur.metadata?.index}] ${cur.text}`,
+                    metadata: { ...parentMeta, ...cur.metadata, role_pattern: 'A', is_chunked: false, chunk_type: 'chat_turn' }
+                });
+                i += 1;
+                continue;
+            }
+        }
+
+        // Add chunk indices/total
+        chunks.forEach((c, idx) => {
+            c.metadata = {
+                ...c.metadata,
+                chunk_index: idx,
+                chunk_total: chunks.length
+            };
+        });
+
+        logger.log(`Conversation-turn chunking produced ${chunks.length} chunks`);
         return chunks;
     }
     

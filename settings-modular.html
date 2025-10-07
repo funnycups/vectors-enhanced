@@ -544,6 +544,15 @@
 
         <!-- General Parameters -->
         <div class="flex-container m-t-1">
+          <div class="flex1" title="分块方式：固定大小或按对话轮次（用户+助手）">
+            <label for="vectors_enhanced_chunking_mode">
+              <small>分块方式</small>
+            </label>
+            <select id="vectors_enhanced_chunking_mode" class="text_pole">
+              <option value="size">固定块大小</option>
+              <option value="turns">对话轮次</option>
+            </select>
+          </div>
           <div class="flex1" title="向量化的文本块大小">
             <label for="vectors_enhanced_chunk_size">
               <small>块大小</small>
@@ -569,6 +578,9 @@
             <small>自定义块分隔符</small>
           </label>
           <input id="vectors_enhanced_force_chunk_delimiter" class="text_pole" type="text" placeholder="（可选）" />
+          <small id="vectors_enhanced_chunking_hint" class="text-muted" style="margin-top: 6px; display: none;">
+            说明：选择“对话轮次”后，将按一轮对话（用户+助手）作为一个块；若第0层仅有助手，则单独作为一块。块大小与重叠设置将被忽略。
+          </small>
         </div>
 
         <!-- Query Settings -->

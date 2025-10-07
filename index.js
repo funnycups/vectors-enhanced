@@ -117,6 +117,7 @@ const settings = {
 
   // General vectorization settings
   chunk_size: 768,
+  chunking_mode: 'size', // 'size' | 'turns' 按固定大小或按对话轮次
   overlap_percent: 0,
   score_threshold: 0.25,
   force_chunk_delimiter: '',
@@ -1562,6 +1563,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorizationSettings: {
           source: settings.source,
           chunk_size: settings.chunk_size,
+          chunking_mode: settings.chunking_mode || 'size',
           overlap_percent: settings.overlap_percent,
           force_chunk_delimiter: settings.force_chunk_delimiter
         }

@@ -125,6 +125,17 @@ export class SettingsManager {
       });
 
 
+    // 分块方式
+    if (this.settings.chunking_mode === undefined) {
+      this.settings.chunking_mode = 'size';
+    }
+    $('#vectors_enhanced_chunking_mode')
+      .val(this.settings.chunking_mode)
+      .on('change', () => {
+        this.settings.chunking_mode = String($('#vectors_enhanced_chunking_mode').val());
+        this.updateAndSave();
+      });
+
     // 块大小
     $('#vectors_enhanced_chunk_size')
       .val(this.settings.chunk_size)

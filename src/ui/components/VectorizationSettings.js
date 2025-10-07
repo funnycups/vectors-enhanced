@@ -121,6 +121,7 @@ export class VectorizationSettings {
     bindParameterListeners() {
         const parameters = [
             'chunk_size',
+            'chunking_mode',
             'overlap_percent',
             'score_threshold',
             'force_chunk_delimiter',
@@ -155,6 +156,30 @@ export class VectorizationSettings {
         $('#vectors_enhanced_show_query_notification').on('change', (e) => {
             this.toggleNotificationDetails(e.target.checked);
         });
+
+        // Chunking mode UI behavior
+        const updateChunkingModeUI = (mode) => {
+            const isTurns = mode === 'turns';
+            const $chunkSize = $('#vectors_enhanced_chunk_size');
+            const $overlap = $('#vectors_enhanced_overlap_percent');
+            const $delimiter = $('#vectors_enhanced_force_chunk_delimiter');
+            const $hint = $('#vectors_enhanced_chunking_hint');
+            // Disable size related controls when turns mode is active
+            $chunkSize.prop('disabled', isTurns);
+            $overlap.prop('disabled', isTurns);
+            $delimiter.prop('disabled', isTurns);
+            if (isTurns) { $hint.show(); } else { $hint.hide(); }
+        };
+        const $mode = $('#vectors_enhanced_chunking_mode');
+        if ($mode.length) {
+            $mode.on('change', (e) => {
+                const mode = e.target.value;
+                this.handleFieldChange('chunking_mode', mode);
+                updateChunkingModeUI(mode);
+            });
+        }
+        // Initialize UI state
+        updateChunkingModeUI(this.settings.chunking_mode || 'size');
     }
 
     /**
@@ -301,7 +326,7 @@ export class VectorizationSettings {
 
         // Load general parameters
         const parameters = [
-            'chunk_size', 'overlap_percent', 'score_threshold', 'force_chunk_delimiter',
+            'chunk_size', 'chunking_mode', 'overlap_percent', 'score_threshold', 'force_chunk_delimiter',
             'query_messages', 'max_results', 'enabled', 'show_query_notification', 'detailed_notification'
         ];
 
@@ -322,6 +347,19 @@ export class VectorizationSettings {
         this.toggleNotificationDetails(this.settings.show_query_notification);
 
         console.log('VectorizationSettings: Settings loaded');
+
+        // Ensure chunking mode select reflects current setting and UI toggles
+        const mode = this.settings.chunking_mode || 'size';
+        $('#vectors_enhanced_chunking_mode').val(mode);
+        const isTurns = mode === 'turns';
+        $('#vectors_enhanced_chunk_size').prop('disabled', isTurns);
+        $('#vectors_enhanced_overlap_percent').prop('disabled', isTurns);
+        $('#vectors_enhanced_force_chunk_delimiter').prop('disabled', isTurns);
+        if (isTurns) {
+            $('#vectors_enhanced_chunking_hint').show();
+        } else {
+            $('#vectors_enhanced_chunking_hint').hide();
+        }
 
         // Load settings from InjectionSettings.js
         this.injectionFields.forEach(field => {
@@ -377,14 +415,16 @@ export class VectorizationSettings {
         }
 
         // Validate numerical parameters
-        if (this.settings.chunk_size < 100) {
-            errors.push('Chunk size must be at least 100');
-            isValid = false;
-        }
-
-        if (this.settings.overlap_percent < 0 || this.settings.overlap_percent > 50) {
-            errors.push('Overlap percentage must be between 0 and 50');
-            isValid = false;
+        const sizeMode = (this.settings.chunking_mode || 'size') === 'size';
+        if (sizeMode) {
+            if (this.settings.chunk_size < 100) {
+                errors.push('Chunk size must be at least 100');
+                isValid = false;
+            }
+            if (this.settings.overlap_percent < 0 || this.settings.overlap_percent > 50) {
+                errors.push('Overlap percentage must be between 0 and 50');
+                isValid = false;
+            }
         }
 
         if (this.settings.score_threshold < 0 || this.settings.score_threshold > 1) {
@@ -446,6 +486,7 @@ export class VectorizationSettings {
             ollama_url: this.settings.ollama_url,
             ollama_keep: this.settings.ollama_keep,
             chunk_size: this.settings.chunk_size,
+            chunking_mode: this.settings.chunking_mode,
             overlap_percent: this.settings.overlap_percent,
             score_threshold: this.settings.score_threshold,
             force_chunk_delimiter: this.settings.force_chunk_delimiter,
