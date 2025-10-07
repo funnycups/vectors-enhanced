@@ -428,9 +428,10 @@ async function autoVectorizeRecentChat(chat) {
       vectorItems = toTake.map(({ item }) => item); // 已是最终格式
     } else {
       const rules = chatSel.tag_rules || [];
+      const applyTagsToFirstMessage = chatSel.apply_tags_to_first_message || false;
       vectorItems = toTake.map(({ item }) => {
         let extractedText;
-        if (item.metadata.index === 0 || item.metadata.is_user === true) {
+        if ((item.metadata.index === 0 && !applyTagsToFirstMessage) || item.metadata.is_user === true) {
           extractedText = item.text;
         } else {
           extractedText = extractTagContent(item.text, rules, settings.content_blacklist || []);
@@ -823,8 +824,9 @@ async function getVectorizableContent(contentSettings = null) {
 
         messages.forEach(msg => {
             let extractedText;
+            const applyTagsToFirstMessage = selectedContent.chat.apply_tags_to_first_message || false;
             // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
-            if (msg.index === 0 || msg.is_user === true) {
+            if ((msg.index === 0 && !applyTagsToFirstMessage) || msg.is_user === true) {
                 // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
                 extractedText = msg.text;
             } else {
