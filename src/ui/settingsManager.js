@@ -129,12 +129,31 @@ export class SettingsManager {
     if (this.settings.chunking_mode === undefined) {
       this.settings.chunking_mode = 'size';
     }
+    const applyChunkingModeUI = (mode) => {
+      const isTurns = mode === 'turns';
+      const $chunkSize = $('#vectors_enhanced_chunk_size');
+      const $overlap = $('#vectors_enhanced_overlap_percent');
+      const $delimiter = $('#vectors_enhanced_force_chunk_delimiter');
+      const $hint = $('#vectors_enhanced_chunking_hint');
+      $chunkSize.prop('disabled', isTurns);
+      $overlap.prop('disabled', isTurns);
+      $delimiter.prop('disabled', isTurns);
+      if ($hint.length) {
+        if (isTurns) $hint.show(); else $hint.hide();
+      }
+    };
+
     $('#vectors_enhanced_chunking_mode')
       .val(this.settings.chunking_mode)
       .on('change', () => {
-        this.settings.chunking_mode = String($('#vectors_enhanced_chunking_mode').val());
+        const mode = String($('#vectors_enhanced_chunking_mode').val());
+        this.settings.chunking_mode = mode;
+        applyChunkingModeUI(mode);
         this.updateAndSave();
       });
+
+    // 初始化一次 UI 状态，处理刷新后控件状态
+    applyChunkingModeUI(this.settings.chunking_mode);
 
     // 块大小
     $('#vectors_enhanced_chunk_size')
