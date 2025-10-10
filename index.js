@@ -2625,6 +2625,29 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     }
   };
 
+  // 添加调用追踪日志
+  const callId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  console.log(`🔍 Vectors Enhanced: rearrangeChat 调用 [ID: ${callId}]`);
+  console.log(`调用参数: type="${type}", chatLength=${chat?.length}, contextSize=${contextSize}`);
+
+  // 检查Generate函数的调用信息
+  try {
+    const errorObj = new Error();
+    const stack = errorObj.stack || '';
+    const generateMatch = stack.match(/Generate.*depth[:\s]*(\d+)/);
+    if (generateMatch) {
+      console.log(`🔍 Generate函数depth参数: ${generateMatch[1]}`);
+    }
+    // 检查是否有Tool Manager相关调用
+    if (stack.includes('ToolManager') || stack.includes('saveFunctionToolInvocations')) {
+      console.log(`⚠️ 检测到Tool Manager相关调用`);
+    }
+  } catch (e) {
+    // 忽略错误，这只是额外的调试信息
+  }
+
+  console.trace('调用栈:');
+
   try {
     if (type === 'quiet') {
       console.debug('Vectors: Skipping quiet prompt');
