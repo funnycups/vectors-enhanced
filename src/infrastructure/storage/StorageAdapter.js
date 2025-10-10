@@ -98,6 +98,107 @@ export class StorageAdapter {
     }
 
     /**
+     * 批量查询多个集合 - 使用 SillyTavern 的 query-multi 端点
+     * @param {string[]} collectionIds 集合ID数组
+     * @param {string} searchText 搜索文本
+     * @param {number} topK 返回结果数量
+     * @param {number} threshold 相似度阈值
+     * @returns {Promise<Record<string, {hashes: number[], metadata: object[], items?: object[]}>>}
+     */
+    async queryMultipleCollections(collectionIds, searchText, topK, threshold = 0.25) {
+        try {
+            logger.log(`Batch querying ${collectionIds.length} collections with text: "${searchText.substring(0, 50)}..."`);
+
+            const response = await fetch(`${this.baseUrl}/query-multi`, {
+                method: 'POST',
+                headers: this.getRequestHeaders(),
+                body: JSON.stringify({
+                    ...this.getVectorsRequestBody(),
+                    collectionIds: collectionIds,
+                    searchText: searchText,
+                    topK: topK,
+                    threshold: threshold,
+                    includeText: true,
+                }),
+            });
+
+            if (!response.ok) {
+                // 如果批量查询端点不存在，返回 null 让调用者回退到单个查询
+                if (response.status === 404) {
+                    logger.warn('Batch query endpoint not available, falling back to individual queries');
+                    return null;
+                }
+                throw new Error(`Failed to batch query collections`);
+            }
+
+            const results = await response.json();
+            logger.log(`Batch query completed, returned results for ${Object.keys(results).length} collections`);
+
+            // 处理每个集合的结果，解码元数据
+            for (const collectionId in results) {
+                const collectionResult = results[collectionId];
+                if (collectionResult.metadata && Array.isArray(collectionResult.metadata)) {
+                    collectionResult.metadata = collectionResult.metadata.map(item => {
+                        if (item.text) {
+                            const decoded = this.decodeMetadataFromText(item.text);
+                            return {
+                                ...item,
+                                text: decoded.text,
+                                decodedType: decoded.metadata.type,
+                                decodedOriginalIndex: decoded.metadata.originalIndex
+                            };
+                        }
+                        return item;
+                    });
+
+                    // 转换为统一的 items 格式，并尝试从多个位置获取分数
+                    collectionResult.items = collectionResult.metadata.map((meta, idx) => {
+                        // 尝试从多个可能的位置获取分数（参考原实现）
+                        let score = 0;
+
+                        // 1. 从 metadata 中获取分数
+                        if (meta.score !== undefined) {
+                            score = meta.score;
+                        }
+                        // 2. 从 distances 数组获取（如果存在）
+                        else if (collectionResult.distances && collectionResult.distances[idx] !== undefined) {
+                            // 距离越小越相似，转换为相似度分数
+                            score = 1 / (1 + collectionResult.distances[idx]);
+                        }
+                        // 3. 从 similarities 数组获取（如果存在）
+                        else if (collectionResult.similarities && collectionResult.similarities[idx] !== undefined) {
+                            score = collectionResult.similarities[idx];
+                        }
+                        // 4. 默认为 0（如原实现）
+
+                        return {
+                            hash: collectionResult.hashes[idx],
+                            text: meta.text,
+                            score: score,
+                            metadata: meta
+                        };
+                    });
+
+                    // 如果存在 distances 或 similarities，记录到日志
+                    if (collectionResult.distances || collectionResult.similarities) {
+                        logger.log(`Collection ${collectionId} has additional score data:`, {
+                            hasDistances: !!collectionResult.distances,
+                            hasSimilarities: !!collectionResult.similarities
+                        });
+                    }
+                }
+            }
+
+            return results;
+        } catch (error) {
+            logger.error(`Error in batch query: ${error.message}`);
+
+            // 对于任何错误，返回 null 让调用者回退到单个查询
+            return null;
+        }
+    }
+
+    /**
      * 查询集合
      * @param {string} collectionId 集合ID
      * @param {string} searchText 搜索文本

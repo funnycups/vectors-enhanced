@@ -24,7 +24,7 @@ export class EnhancedQuerySystem {
    */
   async queryVectorTasks(chatId, queryText, options = {}) {
     this.logger.debug(`开始查询向量任务: ${chatId}`);
-    
+
     // 获取当前聊天的启用任务
     const tasks = this.getChatTasks(chatId).filter(t => t.enabled);
     this.logger.debug(`找到 ${tasks.length} 个启用的任务`);
@@ -42,8 +42,120 @@ export class EnhancedQuerySystem {
       maxResults = 100
     } = options;
 
+    // 准备所有有效任务的 collectionIds
+    const validCollectionIds = [];
+    const taskMap = new Map(); // collectionId -> task 的映射
+
+    for (const task of tasks) {
+      // 解析任务引用
+      const resolved = this.taskResolver.resolve(task);
+
+      if (!resolved.valid) {
+        this.logger.warn(`跳过失效任务: ${task.name} - ${resolved.reason}`);
+        continue;
+      }
+
+      // 确定向量集合ID
+      const collectionId = this.vectorManager.getCollectionId(task, chatId);
+
+      // 检查集合是否存在
+      const collectionExists = await this.vectorManager.collectionExists(collectionId);
+      if (!collectionExists) {
+        this.logger.warn(`向量集合不存在: ${collectionId}`);
+        continue;
+      }
+
+      validCollectionIds.push(collectionId);
+      taskMap.set(collectionId, task);
+    }
+
+    if (validCollectionIds.length === 0) {
+      this.logger.debug('没有有效的向量集合，返回空结果');
+      return [];
+    }
+
+    try {
+      // 使用批量查询端点，一次查询所有集合
+      this.logger.info(`批量查询 ${validCollectionIds.length} 个集合`);
+      const batchResults = await this.storageAdapter.queryMultipleCollections(
+        validCollectionIds,
+        queryText,
+        perTaskLimit * validCollectionIds.length, // 总的 topK 是每个任务限制的总和
+        scoreThreshold
+      );
+
+      // 如果批量查询失败（返回 null），回退到单个查询
+      if (batchResults === null) {
+        this.logger.warn('批量查询不可用，回退到逐个查询模式');
+        return this.queryVectorTasksFallback(chatId, queryText, options, tasks);
+      }
+
+      // 处理批量查询结果
+      for (const [collectionId, collectionResult] of Object.entries(batchResults)) {
+        const task = taskMap.get(collectionId);
+        if (!task || !collectionResult.items || collectionResult.items.length === 0) {
+          continue;
+        }
+
+        // 限制每个任务的结果数量
+        const limitedItems = collectionResult.items.slice(0, perTaskLimit);
+
+        // 增强结果元数据
+        if (includeMetadata) {
+          limitedItems.forEach(item => {
+            item.metadata = {
+              ...item.metadata,
+              taskId: task.taskId,
+              taskName: task.name,
+              isExternal: task.type === "external",
+              chatId: chatId,
+              queryTime: Date.now()
+            };
+
+            // 外挂任务的额外元数据
+            if (task.type === "external") {
+              item.metadata.sourceChat = task.sourceChat;
+              item.metadata.sourceTaskId = task.sourceTaskId;
+              const resolved = this.taskResolver.resolve(task);
+              item.metadata.sourceTaskName = resolved.task.name;
+            }
+          });
+        }
+
+        results.push(...limitedItems);
+        this.logger.debug(`任务 ${task.name} 贡献了 ${limitedItems.length} 个结果`);
+      }
+
+      // 按分数排序并限制结果数量
+      results.sort((a, b) => (b.score || 0) - (a.score || 0));
+      const limitedResults = results.slice(0, maxResults);
+
+      this.logger.info(`批量查询完成: 返回 ${limitedResults.length} 个结果`);
+      return limitedResults;
+
+    } catch (error) {
+      this.logger.error('批量查询过程中发生错误', error);
+
+      // 如果批量查询失败，回退到原来的单个查询方式
+      this.logger.warn('批量查询失败，回退到逐个查询模式');
+      return this.queryVectorTasksFallback(chatId, queryText, options, tasks);
+    }
+  }
+
+  /**
+   * 回退的查询方法（保留原来的逻辑作为备用）
+   */
+  async queryVectorTasksFallback(chatId, queryText, options, tasks) {
+    const results = [];
+    const {
+      perTaskLimit = 10,
+      scoreThreshold = 0.5,
+      includeMetadata = true,
+      maxResults = 100
+    } = options;
+
     // 并行查询所有任务
-    const queryPromises = tasks.map(task => 
+    const queryPromises = tasks.map(task =>
       this.querySingleTask(task, chatId, queryText, {
         perTaskLimit,
         scoreThreshold,
@@ -53,7 +165,7 @@ export class EnhancedQuerySystem {
 
     try {
       const taskResults = await Promise.all(queryPromises);
-      
+
       // 合并结果
       for (const taskResult of taskResults) {
         if (taskResult && taskResult.items && taskResult.items.length > 0) {
