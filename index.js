@@ -502,6 +502,11 @@ let lastRerankNotifyTime = 0;
 let isVectorizing = false;
 let vectorizationAbortController = null;
 
+// 防止 rearrangeChat 重复调用的管理
+let isRearranging = false;
+let lastRearrangeTime = 0;
+const REARRANGE_COOLDOWN = 1000; // 1秒冷却时间
+
 /**
  * Deep merge utility function
  * @param {Object} target - Target object
@@ -2612,6 +2617,12 @@ async function synchronizeChat(batchSize = 5) {
  * @param {string} type Generation type
  */
 async function rearrangeChat(chat, contextSize, abort, type) {
+  // 添加调用追踪日志
+  const callId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  console.log(`🔍 Vectors Enhanced: rearrangeChat 调用 [ID: ${callId}]`);
+  console.log(`调用参数: type="${type}", chatLength=${chat?.length}, contextSize=${contextSize}`);
+  console.trace('调用栈:');
+
   // 开始计时 - 记录查询开始时间
   const queryStartTime = performance.now();
 
