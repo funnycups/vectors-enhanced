@@ -2729,137 +2729,143 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     // 为了确保能从所有任务中获得最相关的结果，每个任务查询稍多一些
     const perTaskLimit = Math.max(Math.ceil((settings.max_results || 10) * 1.5), 20);
 
+    // 准备所有要查询的集合ID
+    const validCollectionIds = [];
+    const taskMap = new Map(); // collectionId -> task 的映射
+
     for (const task of tasks) {
       // 支持外挂任务：如果任务有 type 和 source 字段，使用源集合ID
       let collectionId;
       if (task.type === 'external' && task.source) {
         collectionId = task.source;
-        console.debug(`Vectors: Querying external task "${task.name}" using source collection "${collectionId}"`);
+        console.debug(`Vectors: Preparing external task "${task.name}" using source collection "${collectionId}"`);
       } else {
         collectionId = `${chatId}_${task.taskId}`;
-        console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
+        console.debug(`Vectors: Preparing collection "${collectionId}" for task "${task.name}"`);
       }
 
-      try {
-        const results = await storageAdapter.queryCollection(collectionId, queryText, perTaskLimit, settings.score_threshold);
-        console.debug(`Vectors: Query results for task ${task.name}:`, results);
-        console.debug(`Vectors: Result structure - has items: ${!!results?.items}, has hashes: ${!!results?.hashes}, has distances: ${!!results?.distances}, has similarities: ${!!results?.similarities}`);
+      validCollectionIds.push(collectionId);
+      taskMap.set(collectionId, task);
+    }
 
-        // 根据API返回的结构处理结果
-        if (results) {
-          // 优先使用 metadata 中的文本（向量数据库应该包含）
-          if (results.metadata && Array.isArray(results.metadata)) {
-            console.debug(`Vectors: Using text from metadata for ${collectionId}`);
-            // 添加调试日志查看metadata结构
-            if (results.metadata.length > 0) {
-              console.debug(`Vectors: First metadata item structure:`, {
-                hasText: !!results.metadata[0].text,
-                hasType: !!results.metadata[0].type,
-                hasScore: !!results.metadata[0].score,
-                keys: Object.keys(results.metadata[0])
-              });
-              // 打印完整的第一个结果以查看分数在哪里
-              console.debug(`Vectors: First result full data:`, results.metadata[0]);
-              if (results.distances) {
-                console.debug(`Vectors: Distances array:`, results.distances.slice(0, 3));
-              }
-              if (results.similarities) {
-                console.debug(`Vectors: Similarities array:`, results.similarities.slice(0, 3));
+    if (validCollectionIds.length === 0) {
+      console.debug('Vectors: No valid collections to query');
+      logTimingAndReturn('无有效的向量集合');
+      return;
+    }
+
+    try {
+      // 使用批量查询端点
+      console.info(`Vectors: Batch querying ${validCollectionIds.length} collections`);
+      const batchResults = await storageAdapter.queryMultipleCollections(
+        validCollectionIds,
+        queryText,
+        perTaskLimit * validCollectionIds.length, // 总的 topK
+        settings.score_threshold
+      );
+
+      // 如果批量查询失败，回退到单个查询
+      if (batchResults === null) {
+        console.warn('Vectors: Batch query not available, falling back to individual queries');
+
+        // 回退到原来的单个查询方式
+        for (const collectionId of validCollectionIds) {
+          const task = taskMap.get(collectionId);
+          try {
+            const results = await storageAdapter.queryCollection(collectionId, queryText, perTaskLimit, settings.score_threshold);
+            console.debug(`Vectors: Query results for task ${task.name}:`, results);
+
+            // 处理单个查询结果（保持原有逻辑）
+            if (results) {
+              if (results.metadata && Array.isArray(results.metadata)) {
+                results.metadata.forEach((meta, index) => {
+                  if (meta.text) {
+                    let score = 0;
+                    if (meta.score !== undefined) {
+                      score = meta.score;
+                    } else if (results.distances && results.distances[index] !== undefined) {
+                      score = 1 / (1 + results.distances[index]);
+                    } else if (results.similarities && results.similarities[index] !== undefined) {
+                      score = results.similarities[index];
+                    }
+
+                    allResults.push({
+                      text: meta.text,
+                      score: score,
+                      metadata: {
+                        ...meta,
+                        taskName: task.name,
+                        taskId: task.taskId,
+                        type: meta.decodedType || meta.type,
+                        originalIndex: meta.decodedOriginalIndex !== undefined ? meta.decodedOriginalIndex : meta.originalIndex
+                      },
+                    });
+                  }
+                });
+              } else if (results.items && Array.isArray(results.items)) {
+                results.items.forEach((item, index) => {
+                  if (item.text) {
+                    let score = 0;
+                    if (item.score !== undefined) {
+                      score = item.score;
+                    } else if (results.distances && results.distances[index] !== undefined) {
+                      score = 1 / (1 + results.distances[index]);
+                    } else if (results.similarities && results.similarities[index] !== undefined) {
+                      score = results.similarities[index];
+                    }
+
+                    allResults.push({
+                      text: item.text,
+                      score: score,
+                      metadata: {
+                        ...item.metadata,
+                        taskName: task.name,
+                        taskId: task.taskId,
+                        type: item.metadata?.decodedType || item.metadata?.type,
+                        originalIndex: item.metadata?.decodedOriginalIndex !== undefined ? item.metadata?.decodedOriginalIndex : item.metadata?.originalIndex
+                      },
+                    });
+                  }
+                });
               }
             }
-            results.metadata.forEach((meta, index) => {
-              if (meta.text) {
-                // 尝试从多个可能的位置获取分数
-                let score = 0;
-                if (meta.score !== undefined) {
-                  score = meta.score;
-                } else if (results.distances && results.distances[index] !== undefined) {
-                  // 距离越小越相似，转换为相似度分数
-                  score = 1 / (1 + results.distances[index]);
-                } else if (results.similarities && results.similarities[index] !== undefined) {
-                  score = results.similarities[index];
-                }
-
-                allResults.push({
-                  text: meta.text,
-                  score: score,
-                  metadata: {
-                    ...meta,
-                    taskName: task.name,
-                    taskId: task.taskId,
-                    // Include decoded metadata if available
-                    type: meta.decodedType || meta.type,
-                    originalIndex: meta.decodedOriginalIndex !== undefined ? meta.decodedOriginalIndex : meta.originalIndex
-                  },
-                });
-              } else {
-                console.warn(`Vectors: Missing text in metadata for item ${index} in ${collectionId}`);
-              }
-            });
-          }
-          // 兼容旧版本：如果API返回了items数组（包含text）
-          else if (results.items && Array.isArray(results.items)) {
-            console.debug(`Vectors: Using items format for ${collectionId}`);
-            results.items.forEach((item, index) => {
-              if (item.text) {
-                // 尝试从多个可能的位置获取分数
-                let score = 0;
-                if (item.score !== undefined) {
-                  score = item.score;
-                } else if (results.distances && results.distances[index] !== undefined) {
-                  // 距离越小越相似，转换为相似度分数
-                  score = 1 / (1 + results.distances[index]);
-                } else if (results.similarities && results.similarities[index] !== undefined) {
-                  score = results.similarities[index];
-                }
-
-                allResults.push({
-                  text: item.text,
-                  score: score,
-                  metadata: {
-                    ...item.metadata,
-                    taskName: task.name,
-                    taskId: task.taskId,
-                    // Include decoded metadata if available
-                    type: item.metadata?.decodedType || item.metadata?.type,
-                    originalIndex: item.metadata?.decodedOriginalIndex !== undefined ? item.metadata?.decodedOriginalIndex : item.metadata?.originalIndex
-                  },
-                });
-              }
-            });
-          }
-          // 向后兼容：只有在上述方法都失败时，才尝试从任务中获取
-          else if (results.hashes && task.textContent && Array.isArray(task.textContent)) {
-            console.debug(`Vectors: Fallback to task textContent for ${collectionId} (legacy support)`);
-            results.hashes.forEach((hash, index) => {
-              const textItem = task.textContent.find(item => item.hash === hash);
-              if (textItem && textItem.text) {
-                allResults.push({
-                  text: textItem.text,
-                  score: results.metadata?.[index]?.score || 0,
-                  metadata: {
-                    ...textItem.metadata,
-                    ...(results.metadata?.[index] || {}),
-                    taskName: task.name,
-                    taskId: task.taskId,
-                  },
-                });
-              }
-            });
-          }
-          // 如果所有方法都失败了，记录错误
-          else {
-            console.error(`Vectors: Unable to retrieve text content for ${collectionId}. Results structure:`, {
-              hasMetadata: !!results.metadata,
-              hasItems: !!results.items,
-              hasHashes: !!results.hashes,
-              hasTextContent: !!task.textContent
-            });
+          } catch (error) {
+            console.error(`Vectors: Failed to query task ${task.name}:`, error);
           }
         }
-      } catch (error) {
-        console.error(`Vectors: Failed to query task ${task.name}:`, error);
+      } else {
+        // 处理批量查询结果
+        for (const [collectionId, collectionResult] of Object.entries(batchResults)) {
+          const task = taskMap.get(collectionId);
+          if (!task || !collectionResult.items || collectionResult.items.length === 0) {
+            continue;
+          }
+
+          // 限制每个任务的结果数量
+          const limitedItems = collectionResult.items.slice(0, perTaskLimit);
+
+          // 添加任务信息到元数据
+          limitedItems.forEach(item => {
+            item.metadata = {
+              ...item.metadata,
+              taskName: task.name,
+              taskId: task.taskId
+            };
+          });
+
+          allResults.push(...limitedItems);
+          console.debug(`Vectors: Task ${task.name} contributed ${limitedItems.length} results`);
+        }
+
+        // 按分数排序
+        allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+        console.info(`Vectors: Batch query completed, total results: ${allResults.length}`);
       }
+
+    } catch (error) {
+      console.error('Vectors: Query process failed', error);
+      logTimingAndReturn('查询过程失败', true);
+      return;
     }
 
     // 保存原始查询结果数量（用于通知显示）
