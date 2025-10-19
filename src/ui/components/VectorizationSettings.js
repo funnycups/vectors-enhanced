@@ -125,6 +125,7 @@ export class VectorizationSettings {
             'overlap_percent',
             'score_threshold',
             'force_chunk_delimiter',
+            'turn_fallback_threshold',
             'query_messages',
             'max_results',
             'enabled',
@@ -163,11 +164,14 @@ export class VectorizationSettings {
             const $chunkSize = $('#vectors_enhanced_chunk_size');
             const $overlap = $('#vectors_enhanced_overlap_percent');
             const $delimiter = $('#vectors_enhanced_force_chunk_delimiter');
+            const $turnThreshold = $('#vectors_enhanced_turn_fallback_threshold');
             const $hint = $('#vectors_enhanced_chunking_hint');
             // Disable size related controls when turns mode is active
             $chunkSize.prop('disabled', isTurns);
             $overlap.prop('disabled', isTurns);
             $delimiter.prop('disabled', isTurns);
+            // When in turns mode, the turn threshold is relevant and should be enabled; otherwise optional
+            $turnThreshold.prop('disabled', !isTurns);
             if (isTurns) { $hint.show(); } else { $hint.hide(); }
         };
         const $mode = $('#vectors_enhanced_chunking_mode');
@@ -327,7 +331,7 @@ export class VectorizationSettings {
         // Load general parameters
         const parameters = [
             'chunk_size', 'chunking_mode', 'overlap_percent', 'score_threshold', 'force_chunk_delimiter',
-            'query_messages', 'max_results', 'enabled', 'show_query_notification', 'detailed_notification'
+            'turn_fallback_threshold', 'query_messages', 'max_results', 'enabled', 'show_query_notification', 'detailed_notification'
         ];
 
         parameters.forEach(param => {
@@ -355,6 +359,7 @@ export class VectorizationSettings {
         $('#vectors_enhanced_chunk_size').prop('disabled', isTurns);
         $('#vectors_enhanced_overlap_percent').prop('disabled', isTurns);
         $('#vectors_enhanced_force_chunk_delimiter').prop('disabled', isTurns);
+        $('#vectors_enhanced_turn_fallback_threshold').prop('disabled', !isTurns);
         if (isTurns) {
             $('#vectors_enhanced_chunking_hint').show();
         } else {
@@ -427,6 +432,19 @@ export class VectorizationSettings {
             }
         }
 
+        // In turns mode, allow configuring fallback threshold; 0 means use chunk_size
+        if (!sizeMode) {
+            const thr = Number(this.settings.turn_fallback_threshold || 0);
+            if (isNaN(thr) || thr < 0) {
+                errors.push('Turn fallback threshold must be 0 or a positive number');
+                isValid = false;
+            }
+            if (thr > 200000) {
+                errors.push('Turn fallback threshold too large');
+                isValid = false;
+            }
+        }
+
         if (this.settings.score_threshold < 0 || this.settings.score_threshold > 1) {
             errors.push('Score threshold must be between 0 and 1');
             isValid = false;
@@ -490,6 +508,7 @@ export class VectorizationSettings {
             overlap_percent: this.settings.overlap_percent,
             score_threshold: this.settings.score_threshold,
             force_chunk_delimiter: this.settings.force_chunk_delimiter,
+            turn_fallback_threshold: this.settings.turn_fallback_threshold,
             query_messages: this.settings.query_messages,
             max_results: this.settings.max_results,
             enabled: this.settings.enabled,

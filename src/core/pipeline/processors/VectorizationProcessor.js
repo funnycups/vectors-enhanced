@@ -245,6 +245,9 @@ export class VectorizationProcessor extends ITextProcessor {
      */
     prepareVectorizationChunks(content, metadata, vectorizationSettings) {
         const chunkSize = vectorizationSettings.chunk_size || 1000;
+        const turnFallbackThreshold = vectorizationSettings.turn_fallback_threshold && vectorizationSettings.turn_fallback_threshold > 0
+            ? vectorizationSettings.turn_fallback_threshold
+            : chunkSize;
         const overlapPercent = vectorizationSettings.overlap_percent || 10;
         const forceChunkDelimiter = vectorizationSettings.force_chunk_delimiter;
         const chunkingMode = (vectorizationSettings.chunking_mode || 'size');
@@ -273,7 +276,7 @@ export class VectorizationProcessor extends ITextProcessor {
         // If user selected conversation-turn mode and content is chat array, route to turns chunking
         if (chunkingMode === 'turns' && metadata.type === 'chat' && Array.isArray(content)) {
             logger.log('Using conversation-turn chunking mode for chat array');
-            return this.chunkByConversationTurns(content, metadata);
+            return this.chunkByConversationTurns(content, metadata, turnFallbackThreshold, overlapPercent, forceChunkDelimiter);
         }
 
         // Check if this is summary vectorization mode
@@ -392,11 +395,16 @@ export class VectorizationProcessor extends ITextProcessor {
                 // Apply type-specific chunking for array items
                 if (chunkingMode === 'turns' && itemMetadata.type === 'chat') {
                     // When chunking by turns but we received per-item text, treat each message as a single chunk
-                    // Actual pairing should have been handled when content is the array at parent level.
-                    chunks.push({
-                        text: `[META:floor=${itemMetadata.index}] ${itemText}`,
-                        metadata: { ...itemMetadata, chunk_type: 'chat_turn_single', is_chunked: false, chunk_index: 0, chunk_total: 1 }
-                    });
+                    // However, if this single message exceeds threshold, fallback to size-based splitting
+                    if (itemText.length > chunkSize) {
+                        const chatChunks = this.chunkChatMessage(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
+                        chunks.push(...chatChunks);
+                    } else {
+                        chunks.push({
+                            text: `[META:floor=${itemMetadata.index}] ${itemText}`,
+                            metadata: { ...itemMetadata, chunk_type: 'chat_turn_single', is_chunked: false, chunk_index: 0, chunk_total: 1 }
+                        });
+                    }
                 } else if (itemMetadata.type === 'chat') {
                     const chatChunks = this.chunkChatMessage(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
                     chunks.push(...chatChunks);
@@ -497,7 +505,7 @@ export class VectorizationProcessor extends ITextProcessor {
      * @param {Object} parentMeta - Metadata to inherit
      * @returns {Array} chunks
      */
-    chunkByConversationTurns(contentArray, parentMeta) {
+    chunkByConversationTurns(contentArray, parentMeta, maxChunkSize = 1000, overlapPercent = 10, forceChunkDelimiter = null) {
         const chunks = [];
         // Normalize items to ensure we have needed flags
         const items = contentArray.map((it) => {
@@ -519,12 +527,32 @@ export class VectorizationProcessor extends ITextProcessor {
             const isUser = !!cur.metadata?.is_user;
             const isSystem = !!cur.metadata?.is_hidden; // hidden treated as system in our utils
 
-            // If this is the very first item and it's assistant (not user), emit as a single chunk
+            // If this is the very first item and it's assistant (not user)
             if (i === 0 && !isUser && !isSystem) {
-                chunks.push({
-                    text: `[META:turn=start_assistant,floor=${cur.metadata?.index}] ${cur.text}`,
-                    metadata: { ...parentMeta, ...cur.metadata, chunk_type: 'chat_turn', role_pattern: 'A', chunk_index: chunks.length, is_chunked: false }
-                });
+                const floor = cur.metadata?.index;
+                if (cur.text.length > maxChunkSize) {
+                    // Fallback to size-based chunking for this assistant-only turn
+                    const subChunks = this.splitTextIntoChunks(cur.text, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                    subChunks.forEach((subText, subIdx) => {
+                        chunks.push({
+                            text: `[META:turn=start_assistant,floor=${floor},chunk=${subIdx + 1}/${subChunks.length}] ${subText}`,
+                            metadata: { 
+                                ...parentMeta, 
+                                ...cur.metadata, 
+                                chunk_type: 'chat_turn', 
+                                role_pattern: 'A', 
+                                is_chunked: true,
+                                turn_chunk_index: subIdx,
+                                turn_chunk_total: subChunks.length
+                            }
+                        });
+                    });
+                } else {
+                    chunks.push({
+                        text: `[META:turn=start_assistant,floor=${floor}] ${cur.text}`,
+                        metadata: { ...parentMeta, ...cur.metadata, chunk_type: 'chat_turn', role_pattern: 'A', is_chunked: false }
+                    });
+                }
                 i += 1;
                 continue;
             }
@@ -536,35 +564,97 @@ export class VectorizationProcessor extends ITextProcessor {
                 if (next && !next.metadata?.is_user && !next.metadata?.is_hidden) {
                     const assistantItem = next;
                     const combined = `User(#${userItem.metadata?.index}):\n${userItem.text}\n\nAssistant(#${assistantItem.metadata?.index}):\n${assistantItem.text}`;
-                    chunks.push({
-                        text: `[META:turn=U+A,ufloor=${userItem.metadata?.index},afloor=${assistantItem.metadata?.index}] ${combined}`,
-                        metadata: {
-                            ...parentMeta,
-                            type: 'chat',
-                            user_index: userItem.metadata?.index,
-                            assistant_index: assistantItem.metadata?.index,
-                            role_pattern: 'UA',
-                            is_chunked: false,
-                            chunk_type: 'chat_turn'
-                        }
-                    });
+                    const ufloor = userItem.metadata?.index;
+                    const afloor = assistantItem.metadata?.index;
+
+                    if (combined.length > maxChunkSize) {
+                        // Fallback to size-based splitting for this turn
+                        const subChunks = this.splitTextIntoChunks(combined, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        subChunks.forEach((subText, subIdx) => {
+                            chunks.push({
+                                text: `[META:turn=U+A,ufloor=${ufloor},afloor=${afloor},chunk=${subIdx + 1}/${subChunks.length}] ${subText}`,
+                                metadata: {
+                                    ...parentMeta,
+                                    type: 'chat',
+                                    user_index: ufloor,
+                                    assistant_index: afloor,
+                                    role_pattern: 'UA',
+                                    is_chunked: true,
+                                    chunk_type: 'chat_turn',
+                                    turn_chunk_index: subIdx,
+                                    turn_chunk_total: subChunks.length
+                                }
+                            });
+                        });
+                    } else {
+                        chunks.push({
+                            text: `[META:turn=U+A,ufloor=${ufloor},afloor=${afloor}] ${combined}`,
+                            metadata: {
+                                ...parentMeta,
+                                type: 'chat',
+                                user_index: ufloor,
+                                assistant_index: afloor,
+                                role_pattern: 'UA',
+                                is_chunked: false,
+                                chunk_type: 'chat_turn'
+                            }
+                        });
+                    }
                     i += 2;
                     continue;
                 } else {
                     // No assistant follows; fall back to single user chunk
-                    chunks.push({
-                        text: `[META:turn=user_only,floor=${userItem.metadata?.index}] ${userItem.text}`,
-                        metadata: { ...parentMeta, ...userItem.metadata, role_pattern: 'U', is_chunked: false, chunk_type: 'chat_turn' }
-                    });
+                    const floor = userItem.metadata?.index;
+                    if (userItem.text.length > maxChunkSize) {
+                        const subChunks = this.splitTextIntoChunks(userItem.text, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        subChunks.forEach((subText, subIdx) => {
+                            chunks.push({
+                                text: `[META:turn=user_only,floor=${floor},chunk=${subIdx + 1}/${subChunks.length}] ${subText}`,
+                                metadata: { 
+                                    ...parentMeta, 
+                                    ...userItem.metadata, 
+                                    role_pattern: 'U', 
+                                    is_chunked: true, 
+                                    chunk_type: 'chat_turn',
+                                    turn_chunk_index: subIdx,
+                                    turn_chunk_total: subChunks.length
+                                }
+                            });
+                        });
+                    } else {
+                        chunks.push({
+                            text: `[META:turn=user_only,floor=${floor}] ${userItem.text}`,
+                            metadata: { ...parentMeta, ...userItem.metadata, role_pattern: 'U', is_chunked: false, chunk_type: 'chat_turn' }
+                        });
+                    }
                     i += 1;
                     continue;
                 }
             } else {
                 // Assistant not paired after user (or system/other) -> emit single
-                chunks.push({
-                    text: `[META:turn=assistant_only,floor=${cur.metadata?.index}] ${cur.text}`,
-                    metadata: { ...parentMeta, ...cur.metadata, role_pattern: 'A', is_chunked: false, chunk_type: 'chat_turn' }
-                });
+                const floor = cur.metadata?.index;
+                if (cur.text.length > maxChunkSize) {
+                    const subChunks = this.splitTextIntoChunks(cur.text, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                    subChunks.forEach((subText, subIdx) => {
+                        chunks.push({
+                            text: `[META:turn=assistant_only,floor=${floor},chunk=${subIdx + 1}/${subChunks.length}] ${subText}`,
+                            metadata: { 
+                                ...parentMeta, 
+                                ...cur.metadata, 
+                                role_pattern: 'A', 
+                                is_chunked: true, 
+                                chunk_type: 'chat_turn',
+                                turn_chunk_index: subIdx,
+                                turn_chunk_total: subChunks.length
+                            }
+                        });
+                    });
+                } else {
+                    chunks.push({
+                        text: `[META:turn=assistant_only,floor=${floor}] ${cur.text}`,
+                        metadata: { ...parentMeta, ...cur.metadata, role_pattern: 'A', is_chunked: false, chunk_type: 'chat_turn' }
+                    });
+                }
                 i += 1;
                 continue;
             }

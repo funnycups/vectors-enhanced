@@ -573,6 +573,16 @@
           </div>
         </div>
 
+        <!-- Turn-based chunking fallback threshold -->
+        <div class="flex-container" title="当按对话轮次分块时，若单轮长度超过该阈值则回退到按字符大小分块。0 表示使用块大小 (chunk_size) 作为阈值。">
+          <div class="flex1">
+            <label for="vectors_enhanced_turn_fallback_threshold">
+              <small>按轮次回退阈值 (字符)</small>
+            </label>
+            <input id="vectors_enhanced_turn_fallback_threshold" type="number" class="text_pole" min="0" max="200000" />
+          </div>
+        </div>
+
         <div class="flex-container flexFlowColumn m-t-0-5">
           <label for="vectors_enhanced_force_chunk_delimiter" title="块边界的自定义分隔符">
             <small>自定义块分隔符</small>

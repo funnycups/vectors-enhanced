@@ -118,6 +118,8 @@ const settings = {
   // General vectorization settings
   chunk_size: 768,
   chunking_mode: 'size', // 'size' | 'turns' 按固定大小或按对话轮次
+  // 当按对话轮次分块时，单轮超出该阈值则回退为按字符大小分块；0或空表示使用 chunk_size 作为阈值
+  turn_fallback_threshold: 0,
   overlap_percent: 0,
   score_threshold: 0.25,
   force_chunk_delimiter: '',
@@ -1563,6 +1565,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorizationSettings: {
           source: settings.source,
           chunk_size: settings.chunk_size,
+          turn_fallback_threshold: settings.turn_fallback_threshold,
           chunking_mode: settings.chunking_mode || 'size',
           overlap_percent: settings.overlap_percent,
           force_chunk_delimiter: settings.force_chunk_delimiter

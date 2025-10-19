@@ -179,6 +179,17 @@ export class SettingsManager {
         this.updateAndSave();
       });
 
+    // 按轮次回退阈值（0 表示使用 chunk_size）
+    if (this.settings.turn_fallback_threshold === undefined) {
+      this.settings.turn_fallback_threshold = 0;
+    }
+    $('#vectors_enhanced_turn_fallback_threshold')
+      .val(this.settings.turn_fallback_threshold)
+      .on('input', () => {
+        this.settings.turn_fallback_threshold = Number($('#vectors_enhanced_turn_fallback_threshold').val());
+        this.updateAndSave();
+      });
+
     // 分数阈值
     $('#vectors_enhanced_score_threshold')
       .val(this.settings.score_threshold)
